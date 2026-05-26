@@ -138,12 +138,42 @@ class KnowledgeStore:
             # executescript handles multi-statement DDL (trigger definitions)
             self._conn.executescript(_CREATE_FTS_TRIGGERS)
             # One-time migration: lowercase existing column_name values so future
-            # lookups (which always lowercase) match annotations saved before this fix.
-            # Idempotent — no-op when already lowercase.
-            self._conn.execute(
-                "UPDATE column_knowledge SET column_name = LOWER(column_name) "
-                "WHERE column_name != LOWER(column_name)"
-            )
+            # lookups (which always lowercase) match annotations saved before
+            # the v0.1.11 case-insensitivity fix.
+            #
+            # We can't just `UPDATE ... SET column_name = LOWER(column_name)`
+            # because two mixed-case rows can lowercase to the same key
+            # (e.g. `JobStatus` and `JOBSTATUS` both become `jobstatus`) and
+            # the second UPDATE would hit the (table_fqn, column_name) PK.
+            #
+            # Robust approach: only run when migration is needed (idempotent
+            # guard), then dedupe in Python and rewrite the table atomically.
+            needs_migration = self._conn.execute(
+                "SELECT 1 FROM column_knowledge "
+                "WHERE column_name != LOWER(column_name) LIMIT 1"
+            ).fetchone()
+            if needs_migration:
+                rows = self._conn.execute(
+                    "SELECT table_fqn, column_name, description, enum_values, "
+                    "foreign_key, example_values FROM column_knowledge"
+                ).fetchall()
+                # Dedupe by (table_fqn, lower(column_name)). Last write wins —
+                # we iterate in rowid order, so newer annotations overwrite older.
+                deduped: dict[tuple[str, str], tuple] = {}
+                for r in rows:
+                    key = (r["table_fqn"], r["column_name"].lower())
+                    deduped[key] = (
+                        key[0], key[1],
+                        r["description"], r["enum_values"],
+                        r["foreign_key"], r["example_values"],
+                    )
+                self._conn.execute("DELETE FROM column_knowledge")
+                self._conn.executemany(
+                    "INSERT INTO column_knowledge "
+                    "(table_fqn, column_name, description, enum_values, "
+                    "foreign_key, example_values) VALUES (?, ?, ?, ?, ?, ?)",
+                    list(deduped.values()),
+                )
             self._conn.commit()
 
             # Backfill FTS from existing knowledge rows (idempotent via WHERE NOT EXISTS)
