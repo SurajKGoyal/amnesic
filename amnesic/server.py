@@ -38,6 +38,16 @@ Recommended workflow for any DB question:
 Always call db_get_schema before querying an unfamiliar table.
 Always call db_annotate after discovering what an enum value or status code means.
 Once per database, run db_discover_relationships to populate the FK graph from the DB itself.
+
+If db_list_connections() returns an empty list, the user has not yet configured any
+database connections. Do NOT try to configure them yourself. Instead, tell the user
+to run one of these commands in their terminal:
+
+    amnesic init       (first-time setup wizard)
+    amnesic add        (add another connection to existing config)
+
+These commands run interactively in the user's terminal and guide them through
+the full setup including connection testing and secure credential storage.
 """,
 )
 

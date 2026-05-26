@@ -32,63 +32,35 @@ uvx amnesic
 
 ---
 
-## Setup
-
-### 1. Create config
+## Setup (90 seconds)
 
 ```bash
-amnesic init
+$ pip install amnesic
+$ amnesic init
+# interactive wizard guides you through your first connection
 ```
 
-This creates `~/.config/amnesic/connections.toml` with a commented template.
+The wizard:
+- asks for your database type, host, credentials
+- tests the connection before saving anything
+- stores your password securely in `~/.config/amnesic/.env` (chmod 600)
+- writes the connection block to `~/.config/amnesic/connections.toml`
 
-### 2. Edit the config
+Then add amnesic to your AI client (mcp.json snippet below) and restart.
 
-```toml
-# ~/.config/amnesic/connections.toml
-
-# Nested style: [connections.product.env]
-[connections.orders.prod]
-driver = "mssql"
-server = "localhost"
-port = 11433
-database = "OrdersDB"
-user = "${ORDERS_PROD_USER}"
-password = "${ORDERS_PROD_PASSWORD}"
-tunnel_script = "~/.scripts/mssql-tunnel.sh"  # optional SSH tunnel
-
-[connections.orders.staging]
-driver = "mssql"
-server = "localhost"
-port = 11434
-database = "OrdersDB_Staging"
-user = "${ORDERS_STAGING_USER}"
-password = "${ORDERS_STAGING_PASSWORD}"
-
-# Flat style: [connections.name]
-[connections.analytics]
-driver = "postgres"
-server = "analytics.company.com"
-port = 5432
-database = "warehouse"
-user = "${ANALYTICS_DB_USER}"
-password = "${ANALYTICS_DB_PASSWORD}"
-
-# SQLite — no credentials needed
-[connections.local]
-driver = "sqlite"
-database = "/Users/me/data/local.db"
-```
-
-Use `${ENV_VAR}` for credentials — never hardcode passwords.
-
-Canonical connection names use dot notation: `orders.prod`, `orders.staging`, `analytics`, `local`.
-
-### 3. Test connectivity
+### Adding more connections later
 
 ```bash
-amnesic test              # tests all connections
-amnesic test orders.prod  # tests one connection
+amnesic add          # add another connection to existing config
+amnesic test         # verify all connections
+amnesic test orders.prod  # verify one connection
+```
+
+### Rotating a password
+
+```bash
+amnesic set-secret ORDERS_PROD_PASSWORD
+# prompts for new value with hidden input, updates .env, chmod 600
 ```
 
 ---
@@ -250,6 +222,64 @@ Tables missing from the target schema cache are skipped with a clear reason. Col
 
 ---
 
+## Advanced: hand-edit the TOML
+
+If you prefer to manage the config file yourself, generate a blank template:
+
+```bash
+amnesic init --template
+```
+
+This writes `~/.config/amnesic/connections.toml` with commented examples and exits — no wizard. Edit the file directly:
+
+```toml
+# ~/.config/amnesic/connections.toml
+
+# Nested style: [connections.product.env]
+[connections.orders.prod]
+driver = "mssql"
+server = "localhost"
+port = 11433
+database = "OrdersDB"
+user = "${ORDERS_USER}"
+password = "${ORDERS_PROD_PASSWORD}"
+tunnel_script = "~/.scripts/mssql-tunnel.sh"  # optional SSH tunnel
+
+[connections.orders.staging]
+driver = "mssql"
+server = "localhost"
+port = 11434
+database = "OrdersDB_Staging"
+user = "${ORDERS_USER}"
+password = "${ORDERS_STAGING_PASSWORD}"
+
+# Flat style: [connections.name]
+[connections.analytics]
+driver = "postgres"
+server = "analytics.company.com"
+port = 5432
+database = "warehouse"
+user = "${ANALYTICS_DB_USER}"
+password = "${ANALYTICS_DB_PASSWORD}"
+
+# SQLite — no credentials needed
+[connections.local]
+driver = "sqlite"
+database = "/Users/me/data/local.db"
+```
+
+Use `${ENV_VAR}` for credentials — never hardcode passwords.
+
+Secrets are loaded from `~/.config/amnesic/.env` automatically (format: `KEY=VALUE`, one per line, `#` for comments). Set or rotate them with:
+
+```bash
+amnesic set-secret ORDERS_PROD_PASSWORD
+```
+
+Canonical connection names use dot notation: `orders.prod`, `orders.staging`, `analytics`, `local`.
+
+---
+
 ## Supported databases
 
 | Database | Driver | Extra |
@@ -266,6 +296,7 @@ Tables missing from the target schema cache are skipped with a clear reason. Col
 - **Read-only enforcement**: two layers — static SQL analysis rejects any write/DDL statement before a connection opens, plus every query runs inside an immediately-rolled-back transaction.
 - **No credentials in responses**: `db_list_connections` strips passwords and usernames from output.
 - **Credentials via env vars**: `${ENV_VAR}` expansion at load time — secrets never touch the config file on disk.
+- **Secure .env storage**: `amnesic init` / `amnesic set-secret` always chmod 600 the `.env` file after writing.
 - **Identifier validation**: table names, schema names, and database names are validated against `[A-Za-z0-9_]` before any interpolation into SQL.
 
 ---

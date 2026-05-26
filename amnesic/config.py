@@ -9,6 +9,13 @@ Canonical connection names use dot notation: orders.prod, orders.staging, analyt
 Config location (in priority order):
   1. AMNESIC_CONFIG env var
   2. ~/.config/amnesic/connections.toml
+
+Secrets:
+  Secrets referenced via ${VAR_NAME} in connections.toml can come from:
+    1. Process environment (e.g. exported in your shell)
+    2. ~/.config/amnesic/.env — auto-loaded by amnesic at startup
+  Process env wins on conflicts. The .env file format is simple KEY=VALUE,
+  one per line, # for comments. Never commit this file.
 """
 
 import os
@@ -27,6 +34,60 @@ except ImportError:
 
 
 _ENV_VAR_RE = re.compile(r"\$\{([^}]+)\}")
+_ENV_FILE = Path.home() / ".config" / "amnesic" / ".env"
+_env_loaded = False
+
+
+def load_env_file(path: Path | None = None, override: bool = False) -> int:
+    """
+    Load KEY=VALUE pairs from ~/.config/amnesic/.env into os.environ.
+
+    Idempotent: subsequent calls are no-ops unless override=True.
+    Process environment wins on conflicts (existing values are not overwritten)
+    unless override=True. Returns the number of vars loaded.
+
+    Format:
+        KEY=value
+        KEY="value with spaces"
+        KEY='single quoted'
+        # comment lines ignored
+        # blank lines ignored
+
+    Lines that don't match KEY=VALUE are silently skipped.
+    """
+    global _env_loaded
+    if _env_loaded and not override:
+        return 0
+
+    path = path or _ENV_FILE
+    if not path.exists():
+        _env_loaded = True
+        return 0
+
+    loaded = 0
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if not key or not key[0].isalpha() and key[0] != "_":
+            continue
+        value = value.strip()
+        # Strip matching surrounding quotes
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+        if override or key not in os.environ:
+            os.environ[key] = value
+            loaded += 1
+
+    _env_loaded = True
+    return loaded
+
+
+# Auto-load on module import — process env always wins, so safe even if user
+# has secrets in their shell rc.
+load_env_file()
 
 _DRIVER_DEFAULT_SCHEMA = {
     "mssql": "dbo",

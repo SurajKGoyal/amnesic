@@ -1,11 +1,16 @@
 """
-amnesic CLI — init and test commands.
+amnesic CLI
 
-  amnesic init    — create config directory and template connections.toml
-  amnesic test    — verify connectivity for one or all configured connections
+Commands:
+  amnesic init              — interactive setup wizard (first-time)
+  amnesic init --template   — write the blank commented template (for hand-editing)
+  amnesic add               — add another connection to existing config
+  amnesic set-secret NAME   — set or rotate a secret in ~/.config/amnesic/.env
+  amnesic test [connection] — verify connectivity for one or all connections
 """
 
 from pathlib import Path
+import re
 
 import click
 from rich.console import Console
@@ -13,6 +18,9 @@ from rich.table import Table
 
 _CONFIG_DIR = Path.home() / ".config" / "amnesic"
 _CONFIG_FILE = _CONFIG_DIR / "connections.toml"
+_ENV_FILE = _CONFIG_DIR / ".env"
+
+_ENV_VAR_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 _TEMPLATE = """\
 # amnesic connections.toml
@@ -71,25 +79,60 @@ def cli() -> None:
 
 
 @cli.command()
-def init() -> None:
-    """Create the config directory and write a template connections.toml."""
-    _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+@click.option("--template", is_flag=True, default=False,
+              help="Write a blank commented template instead of running the wizard.")
+def init(template: bool) -> None:
+    """Set up amnesic for the first time (interactive wizard).
+
+    Pass --template to write a blank config file for hand-editing instead.
+    """
+    if template:
+        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        _CONFIG_FILE.write_text(_TEMPLATE)
+        console.print(f"[green]Created:[/green] {_CONFIG_FILE}")
+        console.print()
+        console.print("[bold]Next steps:[/bold]")
+        console.print(f"  1. Edit [cyan]{_CONFIG_FILE}[/cyan] — add your database connections")
+        console.print(f"  2. Export any [cyan]${{ENV_VAR}}[/cyan] credentials your connections need")
+        console.print(f"  3. Run [cyan]amnesic test[/cyan] to verify connectivity")
+        console.print(f"  4. Add amnesic to your MCP client config (see README for snippet)")
+        return
 
     if _CONFIG_FILE.exists():
         console.print(
             f"[yellow]Config already exists:[/yellow] {_CONFIG_FILE}\n"
-            f"Edit it to add or update connections."
+            f"Use [cyan]amnesic add[/cyan] to add more connections, "
+            f"or [cyan]amnesic init --template[/cyan] to overwrite with the empty template."
         )
-    else:
-        _CONFIG_FILE.write_text(_TEMPLATE)
-        console.print(f"[green]Created:[/green] {_CONFIG_FILE}")
+        raise SystemExit(0)
 
-    console.print()
-    console.print("[bold]Next steps:[/bold]")
-    console.print(f"  1. Edit [cyan]{_CONFIG_FILE}[/cyan] — add your database connections")
-    console.print(f"  2. Export any [cyan]${{ENV_VAR}}[/cyan] credentials your connections need")
-    console.print(f"  3. Run [cyan]amnesic test[/cyan] to verify connectivity")
-    console.print(f"  4. Add amnesic to your MCP client config (see README for snippet)")
+    from amnesic._wizard import run_wizard
+    run_wizard(welcome=True, loop=True)
+
+
+@cli.command()
+def add() -> None:
+    """Add a new connection to an existing config (interactive wizard)."""
+    from amnesic._wizard import run_wizard
+    run_wizard(welcome=False, loop=False)
+
+
+@cli.command("set-secret")
+@click.argument("name")
+def set_secret(name: str) -> None:
+    """Set or update a secret in ~/.config/amnesic/.env (hidden input)."""
+    if not _ENV_VAR_NAME_RE.match(name):
+        console.print(
+            f"[red]Invalid env var name:[/red] '{name}'\n"
+            f"Must match ^[A-Z_][A-Z0-9_]*$ (uppercase letters, digits, underscores)."
+        )
+        raise SystemExit(1)
+
+    value = click.prompt("Value", hide_input=True, confirmation_prompt=True)
+
+    from amnesic._wizard import upsert_env_var
+    upsert_env_var(name, value)
+    console.print(f"[green]✓[/green] Set {name} in ~/.config/amnesic/.env")
 
 
 @cli.command()
