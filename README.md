@@ -56,12 +56,30 @@ amnesic test         # verify all connections
 amnesic test orders.prod  # verify one connection
 ```
 
-### Rotating a password
+### Setting and rotating passwords
+
+`amnesic init` and `amnesic add` save your password automatically — for the typical setup flow, you never need to think about this section.
+
+Use `set-secret` when you need to change a stored password later — IT rotated it, you mistyped it during setup, or you're hand-editing the config.
 
 ```bash
-amnesic set-secret ORDERS_PROD_PASSWORD
-# prompts for new value with hidden input, updates .env, chmod 600
+$ amnesic set-secret ORDERS_PROD_PASSWORD
+Value: ****            ← hidden input (your typing is invisible)
+Confirm: ****
+✓ Set ORDERS_PROD_PASSWORD in ~/.config/amnesic/.env
 ```
+
+**What's the variable name?** It's the env var your `connections.toml` references for that connection's password. The wizard auto-generates these as `<CONNECTION_NAME_UPPERCASE_WITH_UNDERSCORES>_PASSWORD`:
+
+| Connection name | Generated env var |
+|---|---|
+| `orders.prod` | `ORDERS_PROD_PASSWORD` |
+| `analytics` | `ANALYTICS_PASSWORD` |
+| `drive.staging` | `DRIVE_STAGING_PASSWORD` |
+
+To see the exact name your config uses, check `~/.config/amnesic/connections.toml` — anything inside `${...}` is the variable to pass to `set-secret`.
+
+**Under the hood**: writes (or replaces) the line in `~/.config/amnesic/.env`, sets file permission to `chmod 600` (only your user can read it), preserves all other entries.
 
 ---
 
@@ -270,11 +288,7 @@ database = "/Users/me/data/local.db"
 
 Use `${ENV_VAR}` for credentials — never hardcode passwords.
 
-Secrets are loaded from `~/.config/amnesic/.env` automatically (format: `KEY=VALUE`, one per line, `#` for comments). Set or rotate them with:
-
-```bash
-amnesic set-secret ORDERS_PROD_PASSWORD
-```
+Secrets are loaded from `~/.config/amnesic/.env` automatically (format: `KEY=VALUE`, one per line, `#` for comments). For each `${VAR_NAME}` referenced in your TOML, populate the matching `.env` entry with [`amnesic set-secret VAR_NAME`](#setting-and-rotating-passwords) (hidden input, chmod 600), or write `.env` yourself.
 
 Canonical connection names use dot notation: `orders.prod`, `orders.staging`, `analytics`, `local`.
 
