@@ -18,6 +18,17 @@ The minimum viable amnesic.
 
 ---
 
+## v0.1.5 — Search 🔍 *Shipped*
+
+BM25-ranked full-text search over the knowledge layer via SQLite FTS5. Zero new dependencies.
+
+- New tool: `db_search(query, connection, target, limit)`
+- FTS5 virtual table per connection with auto-sync triggers
+- Stemming and prefix matching for natural-language queries
+- Backwards compatible: existing knowledge files auto-backfill the FTS index on next open
+
+---
+
 ## v0.2.0 — Knowledge Lifecycle Management 🔜 *Next*
 
 When developers rotate projects, annotations shouldn't die with their access. v0.2 makes knowledge portable and handles schema drift gracefully.

@@ -66,6 +66,50 @@ CREATE TABLE IF NOT EXISTS table_relationships (
 );
 """
 
+_CREATE_KNOWLEDGE_FTS = """
+CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
+    target_type UNINDEXED,
+    table_fqn   UNINDEXED,
+    column_name UNINDEXED,
+    name_text,
+    description,
+    extras,
+    tokenize = "porter unicode61"
+);
+"""
+
+_CREATE_FTS_TRIGGERS = """
+CREATE TRIGGER IF NOT EXISTS trg_tk_after_insert AFTER INSERT ON table_knowledge BEGIN
+    INSERT INTO knowledge_fts(target_type, table_fqn, column_name, name_text, description, extras)
+    VALUES ('table', NEW.table_fqn, '', NEW.table_fqn, NEW.description, NEW.aliases);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_tk_after_update AFTER UPDATE ON table_knowledge BEGIN
+    DELETE FROM knowledge_fts WHERE target_type='table' AND table_fqn=OLD.table_fqn AND column_name='';
+    INSERT INTO knowledge_fts(target_type, table_fqn, column_name, name_text, description, extras)
+    VALUES ('table', NEW.table_fqn, '', NEW.table_fqn, NEW.description, NEW.aliases);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_tk_after_delete AFTER DELETE ON table_knowledge BEGIN
+    DELETE FROM knowledge_fts WHERE target_type='table' AND table_fqn=OLD.table_fqn AND column_name='';
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_ck_after_insert AFTER INSERT ON column_knowledge BEGIN
+    INSERT INTO knowledge_fts(target_type, table_fqn, column_name, name_text, description, extras)
+    VALUES ('column', NEW.table_fqn, NEW.column_name, NEW.column_name, NEW.description, NEW.enum_values);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_ck_after_update AFTER UPDATE ON column_knowledge BEGIN
+    DELETE FROM knowledge_fts WHERE target_type='column' AND table_fqn=OLD.table_fqn AND column_name=OLD.column_name;
+    INSERT INTO knowledge_fts(target_type, table_fqn, column_name, name_text, description, extras)
+    VALUES ('column', NEW.table_fqn, NEW.column_name, NEW.column_name, NEW.description, NEW.enum_values);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_ck_after_delete AFTER DELETE ON column_knowledge BEGIN
+    DELETE FROM knowledge_fts WHERE target_type='column' AND table_fqn=OLD.table_fqn AND column_name=OLD.column_name;
+END;
+"""
+
 
 class KnowledgeStore:
     """
@@ -89,6 +133,32 @@ class KnowledgeStore:
             self._conn.execute(_CREATE_TABLE_KNOWLEDGE)
             self._conn.execute(_CREATE_COLUMN_KNOWLEDGE)
             self._conn.execute(_CREATE_TABLE_RELATIONSHIPS)
+            self._conn.execute(_CREATE_KNOWLEDGE_FTS)
+            # executescript handles multi-statement DDL (trigger definitions)
+            self._conn.executescript(_CREATE_FTS_TRIGGERS)
+            # Backfill FTS from existing knowledge rows (idempotent via WHERE NOT EXISTS)
+            self._conn.execute("""
+                INSERT INTO knowledge_fts(target_type, table_fqn, column_name, name_text, description, extras)
+                SELECT 'table', table_fqn, '', table_fqn, description, aliases
+                FROM table_knowledge
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM knowledge_fts
+                    WHERE target_type='table'
+                      AND knowledge_fts.table_fqn=table_knowledge.table_fqn
+                      AND column_name=''
+                )
+            """)
+            self._conn.execute("""
+                INSERT INTO knowledge_fts(target_type, table_fqn, column_name, name_text, description, extras)
+                SELECT 'column', table_fqn, column_name, column_name, description, enum_values
+                FROM column_knowledge
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM knowledge_fts
+                    WHERE target_type='column'
+                      AND knowledge_fts.table_fqn=column_knowledge.table_fqn
+                      AND knowledge_fts.column_name=column_knowledge.column_name
+                )
+            """)
             self._conn.commit()
 
     # ------------------------------------------------------------------
@@ -465,6 +535,78 @@ class KnowledgeStore:
                 "FROM table_relationships"
             )
             return [dict(r) for r in cur.fetchall()]
+
+    # ------------------------------------------------------------------
+    # Full-text search
+    # ------------------------------------------------------------------
+
+    def search(
+        self,
+        query: str,
+        target: str = "all",
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """
+        BM25-ranked full-text search over annotations.
+
+        Returns ranked list of {target_type, table_fqn, column_name, score, description, snippet}.
+        Score is BM25 (negated so higher is better).
+
+        Args:
+            query:  Search text. Supports FTS5 syntax: phrases ("foo bar"),
+                    prefix matching (pay*), boolean operators (foo AND bar).
+            target: "tables", "columns", or "all" (default).
+            limit:  Maximum results to return.
+        """
+        if target not in ("all", "tables", "columns"):
+            raise ValueError(f"target must be 'all', 'tables', or 'columns', got {target!r}")
+
+        where_target = ""
+        params: list[Any] = [query]
+        if target == "tables":
+            where_target = " AND target_type='table'"
+        elif target == "columns":
+            where_target = " AND target_type='column'"
+
+        sql = f"""
+            SELECT
+                target_type,
+                table_fqn,
+                column_name,
+                description,
+                snippet(knowledge_fts, 4, '<mark>', '</mark>', '…', 12) AS snippet,
+                -bm25(knowledge_fts) AS score
+            FROM knowledge_fts
+            WHERE knowledge_fts MATCH ?{where_target}
+            ORDER BY score DESC
+            LIMIT ?
+        """
+        params.append(limit)
+
+        with self._lock:
+            try:
+                cur = self._conn.execute(sql, params)
+                rows = cur.fetchall()
+            except sqlite3.OperationalError as e:
+                # Malformed FTS query (e.g. unbalanced quotes, bad syntax) — return empty
+                # rather than crash. Error messages vary across SQLite versions:
+                #   "fts5: syntax error" (older), "unterminated string" (3.46+), etc.
+                msg = str(e).lower()
+                if any(kw in msg for kw in ("fts5", "syntax error", "unterminated", "no such")):
+                    return []
+                raise
+
+        results = []
+        for r in rows:
+            results.append({
+                "target_type": r["target_type"],
+                "table_fqn": r["table_fqn"],
+                "column_name": r["column_name"] if r["column_name"] else None,
+                "description": r["description"] or "",
+                "snippet": r["snippet"] or "",
+                "score": float(r["score"]),
+            })
+        return results
 
     def close(self) -> None:
         """Close the SQLite connection."""

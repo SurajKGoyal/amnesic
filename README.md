@@ -206,12 +206,39 @@ Add to `.vscode/mcp.json`:
 |------|-------------|
 | `db_list_connections()` | List all configured connections (no secrets exposed) |
 | `db_list_tables(connection)` | All known tables with descriptions and column counts |
+| `db_search(query, connection, target, limit)` | BM25 search over table/column descriptions and aliases |
 | `db_get_schema(table, connection)` | Column schema merged with saved annotations |
 | `db_query(sql, connection)` | Execute a read-only SELECT query |
 | `db_annotate(table, connection, ...)` | Persist semantic annotations for tables/columns |
 | `db_sync_knowledge(from, to)` | Copy annotations between connections (e.g. staging → prod) |
 | `db_discover_relationships(connection)` | Discover all FK relationships from the live DB |
 | `db_get_relationships(table, connection)` | Navigate the FK graph for JOIN planning |
+
+---
+
+## Searching the knowledge base
+
+For large schemas, `db_list_tables` is impractical — you'd dump 500+ rows into Claude's context. Use `db_search` to find the relevant tables/columns by keyword instead:
+
+```
+"What table tracks customer payments?"
+  → db_search("payments")
+    Top results:
+      - dbo.payments  (table) "Customer payment records..."
+      - dbo.orders.payment_method  (column) "Mode of payment..."
+```
+
+`db_search` uses **SQLite FTS5 with BM25 ranking** — fast, local, no embeddings or external services. Search syntax supports:
+
+| Syntax | Effect |
+|--------|--------|
+| `payment` | Match the word (with stemming — also matches "payments", "paying") |
+| `"payment method"` | Exact phrase |
+| `pay*` | Prefix match — "payment", "payable", etc. |
+| `payment AND status` | Both terms required |
+| `payment OR refund` | Either term |
+
+Results return ranked table/column rows with descriptions and highlighted snippets.
 
 ---
 

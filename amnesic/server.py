@@ -19,6 +19,7 @@ from amnesic.tools.relationships import db_discover_relationships as _db_discove
 from amnesic.tools.relationships import db_get_relationships as _db_get_relationships
 from amnesic.tools.schema import db_get_schema as _db_get_schema
 from amnesic.tools.schema import db_list_tables as _db_list_tables
+from amnesic.tools.search import db_search as _db_search
 
 mcp = FastMCP(
     "amnesic",
@@ -29,13 +30,15 @@ and your relationships across every session.
 
 Recommended workflow for any DB question:
 1. db_list_connections() — see what databases are available
-2. db_list_tables(connection) — see all tables with descriptions
+2. db_search(query, connection) — find the most relevant tables/columns by keyword
+   (USE THIS FIRST when you have a concept in mind — e.g. "payments", "user email".
+   Falls back to db_list_tables only when you need full enumeration.)
 3. db_get_schema(table, connection) — get columns + saved annotations BEFORE writing SQL
-4. db_get_relationships(table, connection) — understand JOINs before writing complex queries
+4. db_get_relationships(table, connection) — understand JOINs before complex queries
 5. db_query(sql, connection) — execute read-only SELECT
 6. db_annotate(...) — persist new understanding (enum meanings, FKs, table purpose)
 
-Always call db_get_schema before querying an unfamiliar table.
+Always call db_search or db_get_schema before querying an unfamiliar table.
 Always call db_annotate after discovering what an enum value or status code means.
 Once per database, run db_discover_relationships to populate the FK graph from the DB itself.
 
@@ -113,6 +116,41 @@ def db_list_tables(connection: str | None = None) -> dict:
         {connection, database, tables: [{table_fqn, description, aliases, column_count}]}
     """
     return _db_list_tables(connection=connection)
+
+
+@mcp.tool()
+def db_search(
+    query: str,
+    connection: str | None = None,
+    target: str = "all",
+    limit: int = 10,
+) -> dict:
+    """
+    Search the knowledge layer for tables/columns matching a query — BM25-ranked.
+
+    Use this BEFORE db_list_tables when you're looking for a specific concept
+    (e.g. "payments", "user email", "shipping address"). db_list_tables returns
+    every table; db_search returns just the relevant ones with descriptions and
+    highlighted snippets.
+
+    Searches across:
+      - Table names, descriptions, and aliases
+      - Column names, descriptions, and enum_values
+    Falls back gracefully to empty results if the query has invalid FTS5 syntax.
+
+    Args:
+        query:      Search text. Supports FTS5 syntax: phrases ("foo bar"),
+                    prefix matching (pay*), boolean operators (foo AND bar).
+        connection: Connection name. Defaults to first defined.
+        target:     "tables", "columns", or "all" (default).
+        limit:      Max results to return (default 10).
+
+    Returns:
+        {query, connection, target, result_count, results: [
+            {target_type, table_fqn, column_name, description, snippet, score}, ...
+        ]}
+    """
+    return _db_search(query=query, connection=connection, target=target, limit=limit)
 
 
 @mcp.tool()
