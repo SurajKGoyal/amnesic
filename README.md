@@ -4,6 +4,8 @@
 
 *"The MCP server with the most ironic name in the registry. It's anything but amnesic — it remembers your database so your AI doesn't have to."*
 
+> 🔒 **Read-only by design.** amnesic refuses to execute `INSERT`, `UPDATE`, `DELETE`, `DROP`, `TRUNCATE`, `ALTER`, `CREATE`, `EXEC`, `MERGE`, `GRANT`, `REVOKE` — and any write statement smuggled inside a `WITH` CTE. Two layers of defense: static SQL analysis rejects the statement before connecting, **and** every query runs inside a transaction that is immediately rolled back. Safe to point at prod. [Details ↓](#safety--read-only-enforcement)
+
 ---
 
 ## The problem
@@ -388,13 +390,28 @@ Canonical connection names use dot notation: `orders.prod`, `orders.staging`, `a
 
 ---
 
-## Security
+## Safety & read-only enforcement
 
-- **Read-only enforcement**: two layers — static SQL analysis rejects any write/DDL statement before a connection opens, plus every query runs inside an immediately-rolled-back transaction.
-- **No credentials in responses**: `db_list_connections` strips passwords and usernames from output.
-- **Credentials via env vars**: `${ENV_VAR}` expansion at load time — secrets never touch the config file on disk.
-- **Secure .env storage**: `amnesic init` / `amnesic set-secret` always chmod 600 the `.env` file after writing. On macOS/Linux, the `.env` file is `chmod 0o600` so only your user can read it. On Windows, the `.env` file lives in `%APPDATA%` which is restricted to your user profile by default — file ACLs are handled by Windows itself.
-- **Identifier validation**: table names, schema names, and database names are validated against `[A-Za-z0-9_]` before any interpolation into SQL.
+amnesic is built to be safe to point at production databases.
+
+### Why your AI can't damage your data
+
+Every query passes through **two independent layers** before reaching the database:
+
+1. **Static analysis** (in `amnesic/readonly.py`) — the SQL is tokenized and rejected if it contains any of:
+   `INSERT`, `UPDATE`, `DELETE`, `DROP`, `TRUNCATE`, `ALTER`, `CREATE`, `EXEC`, `EXECUTE`, `MERGE`, `BULK`, `GRANT`, `REVOKE`, `DENY`.
+   This includes write statements smuggled inside CTEs (`WITH x AS (SELECT ...) UPDATE ...` is caught and refused).
+2. **Transaction rollback** — even if a write statement somehow gets past the static check, the query runs inside `BEGIN TRANSACTION ... ROLLBACK` so nothing is ever committed. Belt and suspenders.
+
+Only `SELECT` and `WITH ... SELECT` reach the database. Comments are stripped before analysis so `/* DELETE FROM users */` can't be used to hide an attack.
+
+### Other safety measures
+
+- **No credentials in responses**: `db_list_connections` strips passwords and usernames from its output. The AI can see *which* connections exist, never *how to authenticate* to them.
+- **Credentials via env vars only**: `${ENV_VAR}` expansion at config-load time — passwords never touch `connections.toml` on disk.
+- **Secure `.env` storage**: on macOS/Linux `chmod 0o600` (owner read/write only); on Windows the `.env` lives in `%APPDATA%` which is restricted to your user profile by Windows ACL.
+- **Identifier validation**: table/schema/database names are checked against `[A-Za-z0-9_]+` before any string interpolation into SQL.
+- **Tested**: 40+ unit tests in `tests/test_readonly.py` cover every write keyword, comment-stripping edge case, CTE-with-write attempts, semicolon-separated multi-statements, and identifier injection attempts. `pytest tests/test_readonly.py` to verify on your machine.
 
 ---
 
