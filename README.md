@@ -386,3 +386,13 @@ Have an idea? [Open an issue.](https://github.com/SurajKGoyal/amnesic/issues/new
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+## MCP Registry
+
+This server is registered on the [official MCP Registry](https://registry.modelcontextprotocol.io).
+
+```
+mcp-name: io.github.SurajKGoyal/amnesic
+```

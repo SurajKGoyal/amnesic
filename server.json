@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.SurajKGoyal/amnesic",
+  "description": "Persistent semantic memory for SQL databases. Postgres, MySQL, MSSQL, SQLite.",
+  "repository": {
+    "url": "https://github.com/SurajKGoyal/amnesic",
+    "source": "github"
+  },
+  "version": "0.1.4",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "amnesic",
+      "version": "0.1.4",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--from",
+          "value": "amnesic[postgres]",
+          "description": "Replace [postgres] with the driver(s) you need: [mysql], [mssql], [sqlite], or [all]."
+        }
+      ],
+      "packageArguments": []
+    }
+  ]
+}
