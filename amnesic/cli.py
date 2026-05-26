@@ -16,7 +16,7 @@ _CONFIG_FILE = _CONFIG_DIR / "connections.toml"
 
 _TEMPLATE = """\
 # amnesic connections.toml
-# Documentation: https://github.com/surajgoyal/amnesic
+# Documentation: https://github.com/SurajKGoyal/amnesic
 #
 # Two styles are supported:
 #

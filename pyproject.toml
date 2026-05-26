@@ -40,6 +40,6 @@ amnesic = "amnesic.cli:cli"
 amnesic = "amnesic.server:mcp"
 
 [project.urls]
-Homepage = "https://github.com/surajgoyal/amnesic"
-Repository = "https://github.com/surajgoyal/amnesic"
-Issues = "https://github.com/surajgoyal/amnesic/issues"
+Homepage = "https://github.com/SurajKGoyal/amnesic"
+Repository = "https://github.com/SurajKGoyal/amnesic"
+Issues = "https://github.com/SurajKGoyal/amnesic/issues"
