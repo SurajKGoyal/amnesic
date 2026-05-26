@@ -80,6 +80,21 @@ def assert_readonly(sql: str) -> None:
             raise ValueError(
                 f"Statement type '{first_token}' is not allowed. Only SELECT/WITH queries are permitted."
             )
+
+        # Reject INTO outside of parentheses.
+        # Catches: SELECT INTO OUTFILE/DUMPFILE (MySQL filesystem write) and
+        #          SELECT * INTO new_table (MSSQL/Postgres table creation).
+        # INTO inside a subquery (depth > 0) is not a write operation.
+        upper_tokens = [t.upper() for t in tokens]
+        depth = 0
+        for tok in upper_tokens:
+            depth += tok.count("(") - tok.count(")")
+            if tok == "INTO" and depth == 0:
+                raise ValueError(
+                    f"INTO clause not allowed: SELECT INTO OUTFILE/DUMPFILE/<table> can write "
+                    f"to the database or filesystem and is rejected by amnesic's read-only enforcement."
+                )
+
         # For CTEs (WITH ...), scan tokens after the first AS for DML keywords.
         # Catches: WITH x AS (SELECT ...) UPDATE ...
         if first_token == "WITH":

@@ -14,6 +14,7 @@ from amnesic.config import ConnectionConfig, load_config, resolve_connection
 from amnesic.drivers import get_engine
 from amnesic.readonly import validate_identifier
 from amnesic.store import get_store
+from amnesic.tools.schema import normalize_fqn
 
 
 # ---------------------------------------------------------------------------
@@ -159,10 +160,19 @@ def db_discover_relationships(connection: str | None = None) -> dict:
 
     raw_relationships = _discover_from_db(conn_cfg)
 
+    # Normalize from_table and to_table to canonical FQNs before storing.
+    # SQL queries return bare names (e.g. sys.tables.name = "currentjobs");
+    # we need the same canonical key that db_get_schema uses.
+    normalized = []
+    for r in raw_relationships:
+        from_fqn, *_ = normalize_fqn(r["from_table"], conn_cfg)
+        to_fqn, *_ = normalize_fqn(r["to_table"], conn_cfg)
+        normalized.append({**r, "from_table": from_fqn, "to_table": to_fqn})
+
     # Enrich with source tag
     relationships = [
         {**r, "source": "discovered", "relationship_type": "fk", "cardinality": "many_to_one"}
-        for r in raw_relationships
+        for r in normalized
     ]
 
     store.discover_relationships_bulk(relationships)
@@ -200,7 +210,7 @@ def db_get_relationships(
     conn_cfg = resolve_connection(connection, connections)
     store = get_store(conn_cfg.name)
 
-    fqn = table.lower().strip()
+    fqn, *_ = normalize_fqn(table, conn_cfg)
     result = store.get_relationships(fqn, depth=depth)
 
     return {

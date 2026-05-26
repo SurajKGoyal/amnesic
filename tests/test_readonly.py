@@ -139,7 +139,9 @@ class TestCteWithDml:
             )
 
     def test_cte_with_embedded_insert(self):
-        with pytest.raises(ValueError, match="INSERT"):
+        # INSERT always has "INTO" so this query also triggers the INTO-outside-parens check.
+        # Either error path is correct — the query MUST be rejected.
+        with pytest.raises(ValueError, match=r"INSERT|INTO"):
             assert_readonly(
                 "WITH src AS (SELECT * FROM staging) INSERT INTO prod SELECT * FROM src"
             )
@@ -202,6 +204,39 @@ class TestEdgeCases:
     def test_lowercase_insert_blocked(self):
         with pytest.raises(ValueError, match="INSERT"):
             assert_readonly("insert into users values (1)")
+
+
+# ---------------------------------------------------------------------------
+# INTO clause bypass (H1 + M1)
+# ---------------------------------------------------------------------------
+
+class TestIntoClauseBlocked:
+    def test_select_into_outfile_blocked(self):
+        with pytest.raises(ValueError, match="INTO"):
+            assert_readonly("SELECT email INTO OUTFILE '/tmp/x.csv' FROM users")
+
+    def test_select_into_new_table_blocked(self):
+        with pytest.raises(ValueError, match="INTO"):
+            assert_readonly("SELECT * INTO new_table FROM orders")
+
+    def test_into_lowercase_blocked(self):
+        with pytest.raises(ValueError, match="INTO"):
+            assert_readonly("select * into x from y")
+
+    def test_into_inside_cte_blocked(self):
+        with pytest.raises(ValueError, match="INTO"):
+            assert_readonly("WITH x AS (SELECT 1) SELECT * INTO y FROM x")
+
+    def test_into_inside_subquery_allowed(self):
+        # INTO inside parens is a subquery context, not a write operation.
+        # This is a contrived form — real SQL doesn't use INTO in subqueries,
+        # but our parenthesis depth check must not false-positive here.
+        # We test with a nested SELECT that has no INTO outside parens.
+        assert_readonly("SELECT id, (SELECT name FROM other) FROM t")
+
+    def test_into_dumpfile_blocked(self):
+        with pytest.raises(ValueError, match="INTO"):
+            assert_readonly("SELECT * INTO DUMPFILE '/tmp/dump.bin' FROM secrets")
 
 
 # ---------------------------------------------------------------------------

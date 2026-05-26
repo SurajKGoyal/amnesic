@@ -18,7 +18,7 @@ from amnesic.store import get_store
 # FQN normalization per driver
 # ---------------------------------------------------------------------------
 
-def _normalize_fqn(table: str, conn: ConnectionConfig) -> tuple[str, str, str, str]:
+def normalize_fqn(table: str, conn: ConnectionConfig) -> tuple[str, str, str, str]:
     """
     Parse a table reference into (fqn, db, schema, table_name) tuples.
 
@@ -81,7 +81,7 @@ def _fetch_schema_from_db(
     """Fetch raw column metadata from the database (no cache)."""
     engine = get_engine(conn_cfg)
     driver = conn_cfg.driver.lower()
-    fqn, db, schema, table_name = _normalize_fqn(table, conn_cfg)
+    fqn, db, schema, table_name = normalize_fqn(table, conn_cfg)
 
     # Validate identifiers before any interpolation
     validate_identifier(table_name, "table")
@@ -209,7 +209,7 @@ def db_get_schema(
     """
     connections = load_config()
     conn_cfg = resolve_connection(connection, connections)
-    fqn, _, _, _ = _normalize_fqn(table, conn_cfg)
+    fqn, _, _, _ = normalize_fqn(table, conn_cfg)
     store = get_store(conn_cfg.name)
 
     cached_columns = None if force_refresh else store.get_cached_schema(fqn)

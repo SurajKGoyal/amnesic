@@ -6,6 +6,8 @@ No real DB connection required.
 """
 
 import json
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -260,3 +262,95 @@ class TestListTables:
         tables = store.list_tables()
         assert tables[0]["table_fqn"] == "apple"
         assert tables[1]["table_fqn"] == "zebra"
+
+
+# ---------------------------------------------------------------------------
+# Column name case-insensitivity (Task F)
+# ---------------------------------------------------------------------------
+
+class TestColumnCaseInsensitivity:
+    def test_save_mixed_case_retrieve_lowercase(self, store):
+        """Save with mixed-case column name, retrieve with lowercase."""
+        store.save_column_knowledge("dbo.orders", "OrderDate", description="timestamp")
+        result = store.get_column_knowledge("dbo.orders", "orderdate")
+        assert result is not None
+        assert result["description"] == "timestamp"
+
+    def test_save_lowercase_retrieve_mixed_case(self, store):
+        """Save with lowercase, retrieve with mixed case."""
+        store.save_column_knowledge("dbo.orders", "orderdate", description="ts")
+        result = store.get_column_knowledge("dbo.orders", "OrderDate")
+        assert result is not None
+        assert result["description"] == "ts"
+
+    def test_save_uppercase_retrieve_lowercase(self, store):
+        """Save with uppercase, retrieve with lowercase."""
+        store.save_column_knowledge("dbo.users", "EMAIL", description="contact email")
+        result = store.get_column_knowledge("dbo.users", "email")
+        assert result is not None
+        assert result["description"] == "contact email"
+
+    def test_upsert_with_different_case_same_row(self, store):
+        """Save twice with different cases — should upsert the same row, not create two."""
+        store.save_column_knowledge("dbo.orders", "Status", description="initial")
+        store.save_column_knowledge("dbo.orders", "STATUS", description="updated")
+        result = store.get_column_knowledge("dbo.orders", "status")
+        assert result is not None
+        assert result["description"] == "updated"
+
+    def test_migration_lowercases_existing_rows(self, tmp_path, monkeypatch):
+        """
+        A store that already has mixed-case column_name rows (pre-v0.1.11) gets
+        them migrated to lowercase on the next open.
+        """
+        import sqlite3
+
+        monkeypatch.setenv("AMNESIC_HOME", str(tmp_path))
+        db = tmp_path / "knowledge_migration_test.db"
+
+        # Create a legacy database with a mixed-case column_name entry
+        raw = sqlite3.connect(str(db))
+        raw.execute(
+            "CREATE TABLE column_knowledge "
+            "(table_fqn TEXT NOT NULL, column_name TEXT NOT NULL, "
+            "description TEXT DEFAULT '', enum_values TEXT DEFAULT '{}', "
+            "foreign_key TEXT DEFAULT '', example_values TEXT DEFAULT '[]', "
+            "PRIMARY KEY (table_fqn, column_name))"
+        )
+        raw.execute(
+            "CREATE TABLE table_knowledge "
+            "(table_fqn TEXT PRIMARY KEY, description TEXT DEFAULT '', aliases TEXT DEFAULT '[]')"
+        )
+        raw.execute(
+            "INSERT INTO column_knowledge (table_fqn, column_name, description) "
+            "VALUES ('dbo.orders', 'OrderDate', 'created timestamp')"
+        )
+        raw.commit()
+        raw.close()
+
+        # Open via KnowledgeStore — migration runs on __init__
+        store = KnowledgeStore("migration_test")
+
+        # Should be retrievable under lowercase
+        result = store.get_column_knowledge("dbo.orders", "orderdate")
+        assert result is not None
+        assert result["description"] == "created timestamp"
+
+
+# ---------------------------------------------------------------------------
+# Secure file permissions (Task G)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(os.name == "nt", reason="File permission tests require POSIX")
+class TestSecureFilePermissions:
+    def test_knowledge_db_is_owner_only(self, tmp_path, monkeypatch):
+        """
+        On POSIX, knowledge_*.db files must be created with 0o600 so that
+        secrets/annotations are not world-readable.
+        """
+        monkeypatch.setenv("AMNESIC_HOME", str(tmp_path))
+        KnowledgeStore("perms_test")
+        db_file = tmp_path / "knowledge_perms_test.db"
+        assert db_file.exists(), "knowledge db was not created"
+        mode = stat.S_IMODE(os.stat(db_file).st_mode)
+        assert mode == 0o600, f"Expected 0o600, got {oct(mode)}"

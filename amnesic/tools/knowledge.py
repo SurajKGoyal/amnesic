@@ -8,6 +8,7 @@ skipping tables/columns that don't exist in the target schema cache.
 
 from amnesic.config import load_config, resolve_connection
 from amnesic.store import get_store
+from amnesic.tools.schema import normalize_fqn
 
 
 def db_annotate(
@@ -52,8 +53,9 @@ def db_annotate(
     conn_cfg = resolve_connection(connection, connections)
     store = get_store(conn_cfg.name)
 
-    # Normalise FQN for the store key
-    fqn = table.lower().strip()
+    # Normalize FQN using driver-specific rules so bare names (e.g. "orders")
+    # are stored under the same canonical key that db_get_schema uses.
+    fqn, *_ = normalize_fqn(table, conn_cfg)
 
     updated: dict = {}
 
@@ -83,6 +85,7 @@ def db_annotate(
 
     return {
         "table": fqn,
+        "canonical_fqn": fqn,
         "connection": conn_cfg.name,
         "updated": updated,
     }
@@ -132,7 +135,14 @@ def db_sync_knowledge(
     warnings: list[dict] = []
 
     for table_entry in source_tables:
-        fqn = table_entry["table_fqn"]
+        src_fqn = table_entry["table_fqn"]
+
+        # Re-normalize the source FQN for the target connection when drivers differ.
+        # Same driver → FQN is already canonical for the target.
+        if from_cfg.driver.lower() != to_cfg.driver.lower():
+            fqn, *_ = normalize_fqn(src_fqn, to_cfg)
+        else:
+            fqn = src_fqn
 
         # Step 1: check if table exists in target schema cache
         if fqn not in target_schema_tables:
@@ -145,8 +155,8 @@ def db_sync_knowledge(
             })
             continue
 
-        # Step 2: sync table-level knowledge
-        src_table_knowledge = from_store.get_table_knowledge(fqn)
+        # Step 2: sync table-level knowledge (read from source using src_fqn key)
+        src_table_knowledge = from_store.get_table_knowledge(src_fqn)
         if src_table_knowledge:
             to_store.save_table_knowledge(
                 fqn,
@@ -156,7 +166,7 @@ def db_sync_knowledge(
 
         # Step 3: sync column knowledge (warn on missing columns)
         target_columns = to_store.get_all_column_names(fqn)
-        src_columns = from_store.get_all_column_knowledge(fqn)
+        src_columns = from_store.get_all_column_knowledge(src_fqn)
 
         for col_entry in src_columns:
             col_name = col_entry["column_name"]

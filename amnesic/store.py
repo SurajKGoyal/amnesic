@@ -16,7 +16,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any
 
-from amnesic._paths import config_dir as _amnesic_config_dir, knowledge_path as _amnesic_knowledge_path
+from amnesic._paths import config_dir as _amnesic_config_dir, knowledge_path as _amnesic_knowledge_path, secure_file as _secure_file
 
 _CONFIG_DIR = _amnesic_config_dir()
 
@@ -126,6 +126,7 @@ class KnowledgeStore:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        _secure_file(db_path)  # chmod 600 — knowledge stores may contain credentials/annotations
 
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
@@ -136,6 +137,15 @@ class KnowledgeStore:
             self._conn.execute(_CREATE_KNOWLEDGE_FTS)
             # executescript handles multi-statement DDL (trigger definitions)
             self._conn.executescript(_CREATE_FTS_TRIGGERS)
+            # One-time migration: lowercase existing column_name values so future
+            # lookups (which always lowercase) match annotations saved before this fix.
+            # Idempotent — no-op when already lowercase.
+            self._conn.execute(
+                "UPDATE column_knowledge SET column_name = LOWER(column_name) "
+                "WHERE column_name != LOWER(column_name)"
+            )
+            self._conn.commit()
+
             # Backfill FTS from existing knowledge rows (idempotent via WHERE NOT EXISTS)
             self._conn.execute("""
                 INSERT INTO knowledge_fts(target_type, table_fqn, column_name, name_text, description, extras)
@@ -259,11 +269,12 @@ class KnowledgeStore:
     ) -> dict[str, Any] | None:
         """Return column-level annotations, or None if none saved."""
         key = table_fqn.lower().strip()
+        col_key = column_name.lower().strip()
         with self._lock:
             cur = self._conn.execute(
                 "SELECT description, enum_values, foreign_key, example_values "
                 "FROM column_knowledge WHERE table_fqn = ? AND column_name = ?",
-                (key, column_name),
+                (key, col_key),
             )
             row = cur.fetchone()
         if row is None:
@@ -284,13 +295,18 @@ class KnowledgeStore:
         foreign_key: str | None = None,
         example_values: list | None = None,
     ) -> None:
-        """Upsert column-level annotations. Only updates non-None fields."""
+        """Upsert column-level annotations. Only updates non-None fields.
+
+        column_name is lowercased before storage so lookups are case-insensitive
+        regardless of the case used by INFORMATION_SCHEMA or the caller.
+        """
         key = table_fqn.lower().strip()
+        col_key = column_name.lower().strip()
         with self._lock:
             cur = self._conn.execute(
                 "SELECT description, enum_values, foreign_key, example_values "
                 "FROM column_knowledge WHERE table_fqn = ? AND column_name = ?",
-                (key, column_name),
+                (key, col_key),
             )
             existing = cur.fetchone()
             if existing:
@@ -301,7 +317,7 @@ class KnowledgeStore:
                 self._conn.execute(
                     "UPDATE column_knowledge SET description = ?, enum_values = ?, foreign_key = ?, example_values = ? "
                     "WHERE table_fqn = ? AND column_name = ?",
-                    (new_desc, new_enum, new_fk, new_ex, key, column_name),
+                    (new_desc, new_enum, new_fk, new_ex, key, col_key),
                 )
             else:
                 self._conn.execute(
@@ -309,7 +325,7 @@ class KnowledgeStore:
                     "VALUES (?, ?, ?, ?, ?, ?)",
                     (
                         key,
-                        column_name,
+                        col_key,
                         description if description is not None else "",
                         json.dumps(enum_values) if enum_values is not None else "{}",
                         foreign_key if foreign_key is not None else "",
@@ -587,14 +603,11 @@ class KnowledgeStore:
             try:
                 cur = self._conn.execute(sql, params)
                 rows = cur.fetchall()
-            except sqlite3.OperationalError as e:
-                # Malformed FTS query (e.g. unbalanced quotes, bad syntax) — return empty
-                # rather than crash. Error messages vary across SQLite versions:
-                #   "fts5: syntax error" (older), "unterminated string" (3.46+), etc.
-                msg = str(e).lower()
-                if any(kw in msg for kw in ("fts5", "syntax error", "unterminated", "no such")):
-                    return []
-                raise
+            except sqlite3.OperationalError:
+                # Any malformed/unsupported FTS query — return empty rather than crash.
+                # Includes: unbalanced quotes, '*' alone, 'AND'/'OR' without operands,
+                # and FTS5-version-specific edge cases like "unknown special query".
+                return []
 
         results = []
         for r in rows:

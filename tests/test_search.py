@@ -125,6 +125,27 @@ class TestSearchTriggers:
         assert any(r["table_fqn"] == "dbo.changing" for r in s.search("banana"))
 
 
+class TestMalformedFtsQueries:
+    """H2: any malformed FTS query must return [] rather than raise."""
+
+    def test_star_alone_returns_empty(self, populated_store):
+        # sqlite3 raises OperationalError("unknown special query: ") for bare "*"
+        results = populated_store.search("*")
+        assert results == []
+
+    def test_unbalanced_quote_returns_empty(self, populated_store):
+        results = populated_store.search('"unbalanced')
+        assert results == []
+
+    def test_bare_and_returns_empty(self, populated_store):
+        results = populated_store.search("AND")
+        assert results == []
+
+    def test_empty_string_returns_empty(self, populated_store):
+        results = populated_store.search("")
+        assert results == []
+
+
 class TestSearchBackfill:
     def test_backfill_existing_knowledge_into_fts(self, tmp_path, monkeypatch):
         """Pre-existing knowledge_<conn>.db without an FTS index gets backfilled on open."""

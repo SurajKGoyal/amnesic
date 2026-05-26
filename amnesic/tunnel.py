@@ -74,12 +74,19 @@ def ensure_tunnel(conn: ConnectionConfig) -> None:
         cmd = [str(script)]
 
     # Step 5: run the script
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(
+            f"Tunnel script did not complete within 15s. Check the script can establish "
+            f"the tunnel quickly (consider using ControlMaster or background mode). "
+            f"Script: {script}"
+        ) from e
 
     # Step 6: check exit code
     if result.returncode != 0:

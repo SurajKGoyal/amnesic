@@ -42,7 +42,12 @@ def db_query(
         trans = conn_db.begin()
         try:
             result = conn_db.execute(text(sql))
-            rows = [dict(r._mapping) for r in result.fetchmany(max_rows)]
+            # Fetch one extra row to distinguish "exactly max_rows results"
+            # from "more results exist". Without this, a result of exactly
+            # max_rows rows would be incorrectly flagged as truncated.
+            fetched = result.fetchmany(max_rows + 1)
+            truncated = len(fetched) > max_rows
+            rows = [dict(r._mapping) for r in fetched[:max_rows]]
         finally:
             trans.rollback()
 
@@ -51,5 +56,5 @@ def db_query(
         "row_count": len(rows),
         "connection": conn_cfg.name,
         "database": conn_cfg.database,
-        "truncated": len(rows) == max_rows,
+        "truncated": truncated,
     }
