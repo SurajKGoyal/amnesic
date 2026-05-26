@@ -7,7 +7,6 @@ No real DB connection required.
 
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -15,10 +14,16 @@ from amnesic.store import KnowledgeStore
 
 
 @pytest.fixture()
-def store(tmp_path: Path) -> KnowledgeStore:
-    """Return a KnowledgeStore backed by a tmp directory."""
-    with patch("amnesic.store._CONFIG_DIR", tmp_path):
-        return KnowledgeStore("test_conn")
+def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> KnowledgeStore:
+    """Return a KnowledgeStore backed by a tmp directory.
+
+    Uses AMNESIC_HOME to redirect config dir resolution — see amnesic/_paths.py.
+    This is the cross-platform-safe way to isolate tests; patching the
+    module-level _CONFIG_DIR constant no longer works because
+    KnowledgeStore.__init__ now calls config_dir() directly.
+    """
+    monkeypatch.setenv("AMNESIC_HOME", str(tmp_path))
+    return KnowledgeStore("test_conn")
 
 
 # ---------------------------------------------------------------------------
