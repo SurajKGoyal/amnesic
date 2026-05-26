@@ -19,9 +19,18 @@ Every session with an AI starts cold. You spend the first few minutes re-explain
 ## Quickstart (90 seconds)
 
 ```bash
-pipx install "amnesic[mssql]"   # swap in [postgres], [mysql], [sqlite], or [all]
+pipx install "amnesic[mssql]"   # one driver — swap in [postgres] or [mysql]
 amnesic init                    # interactive wizard
 ```
+
+**Multiple drivers?** Comma-separate inside the brackets — one install, all drivers ready:
+
+```bash
+pipx install "amnesic[postgres,mysql,mssql]"   # specific set
+pipx install "amnesic[all]"                    # shortcut for postgres + mysql + mssql
+```
+
+SQLite needs no extras — it's in core. Reuse the same install for any number of SQLite files.
 
 The wizard:
 - Asks for your database type, host, and credentials
@@ -185,7 +194,7 @@ If you'd rather not install amnesic on your system, use `uvx` or `pipx` to fetch
 }
 ```
 
-Swap `mssql` for `postgres`, `mysql`, or `all` to match the driver(s) you need.
+For multiple drivers, comma-separate inside the brackets — e.g. `amnesic[postgres,mssql]` or use `amnesic[all]` for everything.
 
 ### VS Code (with MCP extension)
 
