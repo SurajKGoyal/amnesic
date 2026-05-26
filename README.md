@@ -16,19 +16,23 @@ Every session with an AI starts cold. You spend the first few minutes re-explain
 
 ## Install
 
+Pick the driver extras matching the database(s) you'll use:
+
 ```bash
-# Core only (SQLite works out of the box)
-pip install amnesic
+# Isolated install (recommended) — pipx is usually pre-installed
+pipx install "amnesic[mssql]"        # or [postgres], [mysql], [all]
 
-# With driver extras
-pip install "amnesic[postgres]"
+# Or with uv (single-binary alternative)
+uv tool install "amnesic[mssql]"
+
+# Or plain pip (puts amnesic in your active Python env)
 pip install "amnesic[mssql]"
-pip install "amnesic[mysql]"
-pip install "amnesic[all]"
 
-# Or run directly with uvx (no install needed)
-uvx amnesic
+# Core only (SQLite works out of the box, no driver extras needed)
+pipx install amnesic
 ```
+
+After install, `amnesic --help` should work from any terminal — you're ready to run `amnesic init`.
 
 ---
 
@@ -85,6 +89,8 @@ To see the exact name your config uses, check `~/.config/amnesic/connections.tom
 
 ## Add to your AI client
 
+Once amnesic is installed with the right driver extras (see [Install](#install)), the `amnesic` command is on your PATH. Use the same snippet across every MCP client:
+
 ### Claude Code
 
 Add to `~/.claude/mcp.json`:
@@ -93,8 +99,7 @@ Add to `~/.claude/mcp.json`:
 {
   "mcpServers": {
     "amnesic": {
-      "command": "uvx",
-      "args": ["amnesic"]
+      "command": "amnesic"
     }
   }
 }
@@ -108,8 +113,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "amnesic": {
-      "command": "uvx",
-      "args": ["amnesic"]
+      "command": "amnesic"
     }
   }
 }
@@ -123,12 +127,39 @@ Add to `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` globally):
 {
   "mcpServers": {
     "amnesic": {
-      "command": "uvx",
-      "args": ["amnesic"]
+      "command": "amnesic"
     }
   }
 }
 ```
+
+### Without a global install (ephemeral)
+
+If you'd rather not install amnesic on your system, use `uvx` or `pipx` to fetch it each time the MCP client starts. Note the driver extras must be passed explicitly:
+
+```json
+// uvx — requires `uv` installed (`brew install uv`)
+{
+  "mcpServers": {
+    "amnesic": {
+      "command": "uvx",
+      "args": ["--from", "amnesic[mssql]", "amnesic"]
+    }
+  }
+}
+
+// pipx — usually pre-installed via Homebrew or system package manager
+{
+  "mcpServers": {
+    "amnesic": {
+      "command": "pipx",
+      "args": ["run", "--spec", "amnesic[mssql]", "amnesic"]
+    }
+  }
+}
+```
+
+Swap `mssql` for `postgres`, `mysql`, or `all` to match the driver(s) you need.
 
 ### VS Code (with MCP extension)
 
@@ -139,8 +170,7 @@ Add to `.vscode/mcp.json`:
   "servers": {
     "amnesic": {
       "type": "stdio",
-      "command": "uvx",
-      "args": ["amnesic"]
+      "command": "amnesic"
     }
   }
 }
