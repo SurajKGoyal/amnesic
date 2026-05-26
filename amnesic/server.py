@@ -31,12 +31,21 @@ and your relationships across every session.
 Recommended workflow for any DB question:
 1. db_list_connections() — see what databases are available
 2. db_search(query, connection) — find the most relevant tables/columns by keyword
-   (USE THIS FIRST when you have a concept in mind — e.g. "payments", "user email".
-   Falls back to db_list_tables only when you need full enumeration.)
+   (USE THIS FIRST when you have a concept in mind — e.g. "payments", "user email".)
 3. db_get_schema(table, connection) — get columns + saved annotations BEFORE writing SQL
 4. db_get_relationships(table, connection) — understand JOINs before complex queries
 5. db_query(sql, connection) — execute read-only SELECT
 6. db_annotate(...) — persist new understanding (enum meanings, FKs, table purpose)
+
+FALLBACK RULE — when db_search returns an empty result (result_count == 0):
+  Immediately call db_list_tables(connection) to enumerate what exists. The
+  search index may be empty (fresh database, no annotations yet) or your query
+  may not match any annotated content. db_list_tables shows the raw schema
+  cache so you have something to work with.
+
+Also use db_list_tables directly when the user explicitly asks for an overview,
+a count, or 'show me all the tables' — db_search is for finding the needle;
+db_list_tables is for inspecting the haystack.
 
 Always call db_search or db_get_schema before querying an unfamiliar table.
 Always call db_annotate after discovering what an enum value or status code means.
