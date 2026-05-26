@@ -85,6 +85,51 @@ def _prompt_driver() -> str:
         click.echo("  Please enter a number between 1 and 4.")
 
 
+# Python package that amnesic actually imports for each driver, and the
+# install command snippet we suggest if it's missing.
+_DRIVER_PACKAGE = {
+    "postgres": ("psycopg2",      "psycopg2-binary"),
+    "mysql":    ("pymysql",       "pymysql"),
+    "mssql":    ("pymssql",       "pymssql"),
+    "sqlite":   ("sqlite3",       None),  # stdlib, always available
+}
+
+
+def _is_driver_installed(driver: str) -> bool:
+    """Check whether the Python driver package for `driver` is importable."""
+    import importlib.util
+
+    package_name, _ = _DRIVER_PACKAGE[driver]
+    return importlib.util.find_spec(package_name) is not None
+
+
+def _print_missing_driver_help(driver: str) -> None:
+    """Show actionable install commands for a missing driver, then exit."""
+    package_name, pip_name = _DRIVER_PACKAGE[driver]
+    label = _DRIVER_LABELS[driver]
+
+    click.echo("")
+    click.echo(f"  ✗ The {label} driver ('{package_name}') is not installed in this amnesic.")
+    click.echo("")
+    click.echo("  Install it with ONE of these (match how you installed amnesic):")
+    click.echo("")
+    click.echo(f"      pipx inject amnesic {pip_name}")
+    click.echo(f"      uv tool install --with {pip_name} --reinstall amnesic")
+    click.echo(f"      pip install {pip_name}")
+    click.echo("")
+    click.echo("  Then re-run `amnesic init` (or `amnesic add`) to continue.")
+    click.echo("")
+    raise SystemExit(1)
+
+
+def _prompt_driver_with_check() -> str:
+    """Prompt for a driver, then verify the Python package is installed."""
+    driver = _prompt_driver()
+    if not _is_driver_installed(driver):
+        _print_missing_driver_help(driver)
+    return driver
+
+
 def _collect_connection_inputs(welcome: bool = True) -> dict[str, Any] | None:
     """
     Run one pass of the connection input prompts.
@@ -93,7 +138,7 @@ def _collect_connection_inputs(welcome: bool = True) -> dict[str, Any] | None:
     user, password, tunnel_script — or None if the user aborted.
     """
     name = _prompt_connection_name()
-    driver = _prompt_driver()
+    driver = _prompt_driver_with_check()
     defaults = _DRIVER_DEFAULTS[driver]
 
     if driver == "sqlite":
