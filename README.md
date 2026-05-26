@@ -14,51 +14,53 @@ Every session with an AI starts cold. You spend the first few minutes re-explain
 
 ---
 
-## Install
-
-Pick the driver extras matching the database(s) you'll use:
+## Quickstart (90 seconds)
 
 ```bash
-# Isolated install (recommended) — pipx is usually pre-installed
-pipx install "amnesic[mssql]"        # or [postgres], [mysql], [all]
-
-# Or with uv (single-binary alternative)
-uv tool install "amnesic[mssql]"
-
-# Or plain pip (puts amnesic in your active Python env)
-pip install "amnesic[mssql]"
-
-# Core only (SQLite works out of the box, no driver extras needed)
-pipx install amnesic
-```
-
-**Install uv** (if you want to use `uv tool install` or `uvx`):
-
-```bash
-brew install uv                                             # macOS (Homebrew)
-curl -LsSf https://astral.sh/uv/install.sh | sh            # Linux / macOS
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex" # Windows
-```
-
-After install, `amnesic --help` should work from any terminal — you're ready to run `amnesic init`.
-
----
-
-## Setup (90 seconds)
-
-```bash
-$ pip install amnesic
-$ amnesic init
-# interactive wizard guides you through your first connection
+pipx install "amnesic[mssql]"   # swap in [postgres], [mysql], [sqlite], or [all]
+amnesic init                    # interactive wizard
 ```
 
 The wizard:
-- asks for your database type, host, credentials
-- tests the connection before saving anything
-- stores your password securely in `~/.config/amnesic/.env` (chmod 600)
-- writes the connection block to `~/.config/amnesic/connections.toml`
+- Asks for your database type, host, and credentials
+- Tests the connection before saving anything
+- Stores the password securely in `~/.config/amnesic/.env` (chmod 600)
+- Writes the connection block to `~/.config/amnesic/connections.toml`
 
-Then add amnesic to your AI client (mcp.json snippet below) and restart.
+Then [add amnesic to your AI client](#add-to-your-ai-client) and restart.
+
+<details>
+<summary><b>Don't have <code>pipx</code>? Or prefer <code>uv</code> / plain <code>pip</code>?</b></summary>
+
+<br/>
+
+**Install `pipx`** (one-time):
+
+```bash
+brew install pipx                                  # macOS
+sudo apt install pipx                              # Linux (Debian/Ubuntu)
+python -m pip install --user pipx                  # Windows / generic
+```
+
+**Or use `uv`** (single-binary alternative — fast, no Python required):
+
+```bash
+brew install uv                                            # macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh            # Linux / macOS
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex" # Windows
+
+uv tool install "amnesic[mssql]"
+```
+
+**Or plain `pip`** (installs into your active Python env):
+
+```bash
+pip install "amnesic[mssql]"
+```
+
+</details>
+
+After install, `amnesic --help` works from any terminal.
 
 ### Where amnesic stores things
 
@@ -107,7 +109,7 @@ To see the exact name your config uses, check `~/.config/amnesic/connections.tom
 
 ## Add to your AI client
 
-Once amnesic is installed with the right driver extras (see [Install](#install)), the `amnesic` command is on your PATH. Use the same snippet across every MCP client:
+Once amnesic is installed with the right driver extras (see [Quickstart](#quickstart-90-seconds)), the `amnesic` command is on your PATH. Use the same snippet across every MCP client:
 
 ### Claude Code
 
