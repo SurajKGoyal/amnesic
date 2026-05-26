@@ -317,6 +317,9 @@ def append_connection_to_toml(name: str, conn_dict: dict[str, Any]) -> None:
 
     Uses plain string concatenation — never parses and re-serializes the file,
     so existing comments and formatting are always preserved.
+
+    Invalidates the in-process config cache so the next load_config() call
+    picks up the newly added connection.
     """
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -333,6 +336,9 @@ def append_connection_to_toml(name: str, conn_dict: dict[str, Any]) -> None:
 
     with open(_CONFIG_FILE, "a") as fh:
         fh.write(block)
+
+    from amnesic.config import invalidate_config_cache
+    invalidate_config_cache()
 
 
 def upsert_env_var(name: str, value: str) -> None:

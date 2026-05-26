@@ -155,15 +155,26 @@ def _merge_knowledge_into_schema(
     columns: list[dict],
     conn_name: str,
 ) -> dict:
-    """Merge table + column knowledge annotations into schema results."""
+    """Merge table + column knowledge annotations into schema results.
+
+    Fetches all column knowledge for the table in a single SQLite query
+    (previously N+1 — one query per column).
+    """
     store = get_store(conn_name)
     table_knowledge = store.get_table_knowledge(fqn)
     table_description = table_knowledge.get("description", "") if table_knowledge else ""
 
+    # Single query for all column annotations — keyed by lowercase column_name
+    # to match the v0.1.11 convention (column_name is stored lowercase).
+    all_col_knowledge: dict[str, dict] = {
+        ck["column_name"]: ck
+        for ck in store.get_all_column_knowledge(fqn)
+    }
+
     enriched = []
     for col in columns:
-        col_name = col.get("column_name", "")
-        col_knowledge = store.get_column_knowledge(fqn, col_name)
+        col_name = col.get("column_name", "").lower().strip()
+        col_knowledge = all_col_knowledge.get(col_name)
         enriched_col = dict(col)
         if col_knowledge:
             if col_knowledge.get("description"):

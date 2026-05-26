@@ -14,6 +14,7 @@ from amnesic.config import (
     ConfigError,
     ConnectionConfig,
     get_default_connection_name,
+    invalidate_config_cache,
     load_config,
     resolve_connection,
 )
@@ -318,3 +319,94 @@ class TestHelpers:
         connections = load_config(p)
         with pytest.raises(ConfigError, match="badname"):
             resolve_connection("badname", connections)
+
+
+# ---------------------------------------------------------------------------
+# Config cache (v0.1.12)
+# ---------------------------------------------------------------------------
+
+class TestConfigCache:
+    def setup_method(self):
+        """Ensure a clean cache state before each test."""
+        invalidate_config_cache()
+
+    def teardown_method(self):
+        """Clean up cache after each test so state doesn't bleed into others."""
+        invalidate_config_cache()
+
+    def test_repeated_load_returns_cached_value(self, tmp_path):
+        """Second load_config call for the same path returns the cached dict."""
+        p = write_toml(tmp_path, """
+            [connections.db]
+            driver = "sqlite"
+            database = "/tmp/a.db"
+        """)
+        first = load_config(p)
+        second = load_config(p)
+        # Same object identity — the cache was hit, not re-parsed.
+        assert first is second
+
+    def test_modified_file_returns_stale_cache(self, tmp_path):
+        """Cache is not invalidated by disk changes — stale result is served."""
+        p = write_toml(tmp_path, """
+            [connections.original]
+            driver = "sqlite"
+            database = "/tmp/orig.db"
+        """)
+        first = load_config(p)
+        assert "original" in first
+
+        # Overwrite with a new connection name
+        p.write_text(
+            "[connections.replaced]\ndriver = \"sqlite\"\ndatabase = \"/tmp/new.db\"\n"
+        )
+        # Without invalidation, the cache returns the old data
+        cached = load_config(p)
+        assert "original" in cached
+        assert "replaced" not in cached
+
+    def test_invalidate_then_reload_sees_new_value(self, tmp_path):
+        """After invalidate_config_cache(), load_config re-reads the file."""
+        p = write_toml(tmp_path, """
+            [connections.original]
+            driver = "sqlite"
+            database = "/tmp/orig.db"
+        """)
+        load_config(p)
+
+        p.write_text(
+            "[connections.replaced]\ndriver = \"sqlite\"\ndatabase = \"/tmp/new.db\"\n"
+        )
+        invalidate_config_cache()
+        fresh = load_config(p)
+        assert "replaced" in fresh
+        assert "original" not in fresh
+
+    def test_force_reload_bypasses_cache(self, tmp_path):
+        """force_reload=True reads from disk even with a warm cache."""
+        p = write_toml(tmp_path, """
+            [connections.original]
+            driver = "sqlite"
+            database = "/tmp/orig.db"
+        """)
+        load_config(p)
+
+        p.write_text(
+            "[connections.replaced]\ndriver = \"sqlite\"\ndatabase = \"/tmp/new.db\"\n"
+        )
+        fresh = load_config(p, force_reload=True)
+        assert "replaced" in fresh
+        assert "original" not in fresh
+
+    def test_different_path_is_not_a_cache_hit(self, tmp_path):
+        """Cache is keyed by resolved path — different paths never share a cache entry."""
+        p1 = tmp_path / "a.toml"
+        p1.write_text("[connections.db_a]\ndriver = \"sqlite\"\ndatabase = \"/tmp/a.db\"\n")
+        p2 = tmp_path / "b.toml"
+        p2.write_text("[connections.db_b]\ndriver = \"sqlite\"\ndatabase = \"/tmp/b.db\"\n")
+
+        r1 = load_config(p1)
+        r2 = load_config(p2)
+        assert "db_a" in r1
+        assert "db_b" in r2
+        assert r1 is not r2

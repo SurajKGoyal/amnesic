@@ -155,7 +155,11 @@ def set_secret(name: str) -> None:
     value = click.prompt("Value", hide_input=True, confirmation_prompt=True)
 
     from amnesic._wizard import upsert_env_var
+    from amnesic.config import invalidate_config_cache
     upsert_env_var(name, value)
+    # The .env file feeds ${VAR} expansion during load_config. Invalidate the
+    # cache so the next tool call re-expands passwords with the new value.
+    invalidate_config_cache()
     console.print(f"[green]✓[/green] Set {name} in ~/.config/amnesic/.env")
 
 

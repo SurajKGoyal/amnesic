@@ -20,6 +20,7 @@ Secrets:
 
 import os
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -195,41 +196,80 @@ def _parse_connections(
     return connections
 
 
-def load_config(path: str | Path | None = None) -> dict[str, ConnectionConfig]:
+_config_cache: dict[str, "ConnectionConfig"] | None = None
+_config_cache_path: Path | None = None
+_config_cache_lock = threading.Lock()
+
+
+def load_config(
+    path: str | Path | None = None,
+    force_reload: bool = False,
+) -> dict[str, "ConnectionConfig"]:
     """
     Load and parse the connections.toml config file.
 
     Returns a dict mapping canonical connection names to ConnectionConfig objects.
     Order is preserved (insertion order = TOML order).
 
+    Result is cached in-process. Pass force_reload=True to bypass the cache and
+    re-read from disk (e.g. after modifying the file externally). Call
+    invalidate_config_cache() to clear the cache without immediately reloading.
+
     Raises:
         ConfigError: for missing files, missing env vars, or invalid structure.
     """
-    if path is None:
-        env_path = os.environ.get("AMNESIC_CONFIG")
-        if env_path:
-            path = Path(env_path)
-        else:
-            path = _amnesic_connections_path()
+    global _config_cache, _config_cache_path
 
-    path = Path(path)
-    if not path.exists():
+    # Resolve the config path the same way regardless of caching.
+    if path is None:
+        env_path_str = os.environ.get("AMNESIC_CONFIG")
+        if env_path_str:
+            resolved_path = Path(env_path_str)
+        else:
+            resolved_path = _amnesic_connections_path()
+    else:
+        resolved_path = Path(path)
+
+    # Cache hit — return early under the lock to avoid TOCTOU.
+    with _config_cache_lock:
+        if (
+            _config_cache is not None
+            and _config_cache_path == resolved_path
+            and not force_reload
+        ):
+            return _config_cache
+
+    if not resolved_path.exists():
         raise ConfigError(
-            f"Config file not found: {path}\n"
+            f"Config file not found: {resolved_path}\n"
             f"Run 'amnesic init' to create a template."
         )
 
     try:
-        with open(path, "rb") as fh:
+        with open(resolved_path, "rb") as fh:
             raw = tomllib.load(fh)
     except Exception as exc:
-        raise ConfigError(f"Failed to parse config at {path}: {exc}") from exc
+        raise ConfigError(f"Failed to parse config at {resolved_path}: {exc}") from exc
 
     connections_raw = raw.get("connections", {})
     if not isinstance(connections_raw, dict):
         raise ConfigError("Config must have a [connections] section.")
 
-    return _parse_connections(connections_raw)
+    result = _parse_connections(connections_raw)
+
+    with _config_cache_lock:
+        _config_cache = result
+        _config_cache_path = resolved_path
+
+    return result
+
+
+def invalidate_config_cache() -> None:
+    """Clear the cached config. Call after modifying connections.toml or .env externally."""
+    global _config_cache, _config_cache_path
+    with _config_cache_lock:
+        _config_cache = None
+        _config_cache_path = None
 
 
 def get_default_connection_name(connections: dict[str, ConnectionConfig]) -> str:

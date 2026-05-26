@@ -6,12 +6,12 @@
     "url": "https://github.com/SurajKGoyal/amnesic",
     "source": "github"
   },
-  "version": "0.1.11",
+  "version": "0.1.12",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "amnesic",
-      "version": "0.1.11",
+      "version": "0.1.12",
       "transport": {
         "type": "stdio"
       },

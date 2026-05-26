@@ -192,21 +192,25 @@ class KnowledgeStore:
     def save_cached_schema(self, table_fqn: str, columns: list[dict[str, Any]]) -> None:
         """Replace all cached columns for a table."""
         key = table_fqn.lower().strip()
+        params = [
+            (
+                key,
+                col.get("column_name", col.get("name", "")),
+                col.get("data_type", col.get("type", "")),
+                col.get("is_nullable", ""),
+                col.get("max_length") if col.get("max_length") is not None else None,
+            )
+            for col in columns
+        ]
         with self._lock:
             self._conn.execute(
                 "DELETE FROM schema_cache WHERE table_fqn = ?", (key,)
             )
-            for col in columns:
-                self._conn.execute(
+            if params:
+                self._conn.executemany(
                     "INSERT INTO schema_cache (table_fqn, column_name, data_type, is_nullable, max_length) "
                     "VALUES (?, ?, ?, ?, ?)",
-                    (
-                        key,
-                        col.get("column_name", col.get("name", "")),
-                        col.get("data_type", col.get("type", "")),
-                        col.get("is_nullable", ""),
-                        col.get("max_length") if col.get("max_length") is not None else None,
-                    ),
+                    params,
                 )
             self._conn.commit()
 
@@ -344,62 +348,63 @@ class KnowledgeStore:
         """
         BFS over table_relationships up to the given depth.
 
+        Loads the full edge set in a single query, releases the lock, then
+        traverses in pure Python — concurrent reads are not blocked by the BFS.
+
         Returns:
             {neighbors: [{from_table, from_column, to_table, to_column, ...}],
              paths: ["TableA -> TableB -> TableC", ...]}
         """
         key = table_fqn.lower().strip()
-        visited: set[str] = {key}
+
+        # Load all edges in one query, then release the lock before BFS.
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT from_table, from_column, to_table, to_column, "
+                "relationship_type, cardinality, source, notes "
+                "FROM table_relationships"
+            )
+            all_edges = [dict(r) for r in cur.fetchall()]
+
+        # Build adjacency lists in pure Python — no lock held.
+        forward: dict[str, list[dict]] = {}
+        reverse: dict[str, list[dict]] = {}
+        for edge in all_edges:
+            forward.setdefault(edge["from_table"], []).append(edge)
+            reverse.setdefault(edge["to_table"], []).append(edge)
+
+        # BFS
         neighbors: list[dict] = []
         paths: list[str] = []
+        visited: set[str] = {key}
+        queue: deque[tuple[str, int, list[str]]] = deque([(key, 0, [key])])
 
-        # BFS queue: (current_table, current_depth, path_so_far)
-        queue: deque[tuple[str, int, list[str]]] = deque()
-        queue.append((key, 0, [key]))
+        while queue:
+            current, current_depth, current_path = queue.popleft()
+            if current_depth >= depth:
+                continue
 
-        with self._lock:
-            while queue:
-                current, current_depth, current_path = queue.popleft()
-                if current_depth >= depth:
-                    continue
+            for edge in forward.get(current, []):
+                neighbor = edge["to_table"]
+                neighbors.append(edge)
+                new_path = current_path + [neighbor]
+                if len(new_path) > 1:
+                    paths.append(" -> ".join(new_path))
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append((neighbor, current_depth + 1, new_path))
 
-                # Forward edges (from_table = current)
-                cur = self._conn.execute(
-                    "SELECT from_table, from_column, to_table, to_column, "
-                    "relationship_type, cardinality, source, notes "
-                    "FROM table_relationships WHERE from_table = ?",
-                    (current,),
-                )
-                for row in cur.fetchall():
-                    neighbor = row["to_table"]
-                    neighbors.append(dict(row))
-                    new_path = current_path + [neighbor]
-                    if len(new_path) > 1:
-                        paths.append(" -> ".join(new_path))
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        queue.append((neighbor, current_depth + 1, new_path))
+            for edge in reverse.get(current, []):
+                neighbor = edge["from_table"]
+                neighbors.append(edge)
+                new_path = current_path + [neighbor]
+                if len(new_path) > 1:
+                    paths.append(" -> ".join(new_path))
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append((neighbor, current_depth + 1, new_path))
 
-                # Reverse edges (to_table = current)
-                cur = self._conn.execute(
-                    "SELECT from_table, from_column, to_table, to_column, "
-                    "relationship_type, cardinality, source, notes "
-                    "FROM table_relationships WHERE to_table = ?",
-                    (current,),
-                )
-                for row in cur.fetchall():
-                    neighbor = row["from_table"]
-                    neighbors.append(dict(row))
-                    new_path = current_path + [neighbor]
-                    if len(new_path) > 1:
-                        paths.append(" -> ".join(new_path))
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        queue.append((neighbor, current_depth + 1, new_path))
-
-        # Deduplicate paths
         unique_paths = list(dict.fromkeys(paths))
-
         return {"neighbors": neighbors, "paths": unique_paths}
 
     def save_relationship(
@@ -426,24 +431,32 @@ class KnowledgeStore:
 
     def discover_relationships_bulk(self, rows: list[dict[str, Any]]) -> None:
         """Bulk-insert discovered FK relationships, replacing existing ones."""
+        params = [
+            (
+                row.get("from_table", "").lower(),
+                row.get("from_column", ""),
+                row.get("to_table", "").lower(),
+                row.get("to_column", ""),
+                row.get("relationship_type", "fk"),
+                row.get("cardinality", "many_to_one"),
+                row.get("source", "discovered"),
+                row.get("notes", ""),
+            )
+            for row in rows
+        ]
         with self._lock:
-            for row in rows:
-                self._conn.execute(
-                    "INSERT OR REPLACE INTO table_relationships "
-                    "(from_table, from_column, to_table, to_column, relationship_type, cardinality, source, notes) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        row.get("from_table", "").lower(),
-                        row.get("from_column", ""),
-                        row.get("to_table", "").lower(),
-                        row.get("to_column", ""),
-                        row.get("relationship_type", "fk"),
-                        row.get("cardinality", "many_to_one"),
-                        row.get("source", "discovered"),
-                        row.get("notes", ""),
-                    ),
-                )
-            self._conn.commit()
+            if params:
+                try:
+                    self._conn.executemany(
+                        "INSERT OR REPLACE INTO table_relationships "
+                        "(from_table, from_column, to_table, to_column, relationship_type, cardinality, source, notes) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        params,
+                    )
+                    self._conn.commit()
+                except Exception:
+                    self._conn.rollback()
+                    raise
 
     # ------------------------------------------------------------------
     # List tables
