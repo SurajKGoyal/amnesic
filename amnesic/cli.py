@@ -73,9 +73,29 @@ _TEMPLATE = """\
 console = Console()
 
 
-@click.group()
-def cli() -> None:
-    """amnesic — the MCP server that remembers your database."""
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx: click.Context) -> None:
+    """amnesic — the MCP server that remembers your database.
+
+    With no subcommand:
+      • If stdin is piped (an MCP client launched us) → start the MCP server.
+      • If stdin is a TTY (you ran 'amnesic' in your terminal) → show this help.
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+
+    import sys
+
+    if sys.stdin.isatty():
+        # Interactive user — show help so they can discover subcommands.
+        click.echo(ctx.get_help())
+        return
+
+    # Piped stdin — we're being invoked as an MCP server. Start it.
+    from amnesic.server import main as _server_main
+
+    _server_main()
 
 
 @cli.command()
