@@ -16,8 +16,9 @@ from collections import deque
 from pathlib import Path
 from typing import Any
 
+from amnesic._paths import config_dir as _amnesic_config_dir, knowledge_path as _amnesic_knowledge_path
 
-_CONFIG_DIR = Path.home() / ".config" / "amnesic"
+_CONFIG_DIR = _amnesic_config_dir()
 
 _CREATE_SCHEMA_CACHE = """
 CREATE TABLE IF NOT EXISTS schema_cache (
@@ -75,9 +76,8 @@ class KnowledgeStore:
     """
 
     def __init__(self, conn_name: str) -> None:
-        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        safe_name = conn_name.replace(".", "_")
-        db_path = _CONFIG_DIR / f"knowledge_{safe_name}.db"
+        _amnesic_config_dir().mkdir(parents=True, exist_ok=True)
+        db_path = _amnesic_knowledge_path(conn_name)
 
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)

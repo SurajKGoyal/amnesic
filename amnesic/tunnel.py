@@ -8,6 +8,7 @@ The function is idempotent — if the port is already reachable it returns
 immediately without touching the tunnel script.
 """
 
+import os
 import socket
 import subprocess
 from pathlib import Path
@@ -25,11 +26,18 @@ def ensure_tunnel(conn: ConnectionConfig) -> None:
       1. Socket check (server, port) with 2s timeout — return if already open.
       2. Expand ~ in tunnel_script path.
       3. Raise if the script file does not exist.
-      4. Run the script via bash with a 15s timeout.
-      5. Raise RuntimeError with stderr if it exits non-zero.
+      4. Pick interpreter based on script extension and platform.
+      5. Run the script with a 15s timeout.
+      6. Raise RuntimeError with stderr if it exits non-zero.
+
+    Supported script types:
+      .sh              — bash (macOS / Linux)
+      .ps1             — PowerShell (Windows)
+      .bat / .cmd      — cmd.exe (Windows)
+      no extension     — passed directly (uses shebang on POSIX; unsupported on Windows)
 
     Raises:
-        RuntimeError: if the tunnel script is missing or exits with an error.
+        RuntimeError: if the tunnel script is missing, unsupported, or exits with an error.
     """
     if not conn.tunnel_script:
         return
@@ -48,14 +56,31 @@ def ensure_tunnel(conn: ConnectionConfig) -> None:
     if not script.exists():
         raise RuntimeError(f"Tunnel script not found: {script}")
 
-    # Step 4: run the script
+    # Step 4: pick interpreter based on extension
+    suffix = script.suffix.lower()
+    if suffix == ".sh":
+        cmd = ["bash", str(script)]
+    elif suffix == ".ps1":
+        cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
+    elif suffix in (".bat", ".cmd"):
+        cmd = ["cmd.exe", "/c", str(script)]
+    else:
+        # No extension or unknown — let OS decide (uses shebang on POSIX)
+        if os.name == "nt":
+            raise RuntimeError(
+                f"Tunnel script extension '{suffix or '(none)'}' not supported on Windows. "
+                f"Use .ps1, .bat, or .cmd."
+            )
+        cmd = [str(script)]
+
+    # Step 5: run the script
     result = subprocess.run(
-        ["bash", str(script)],
+        cmd,
         capture_output=True,
         text=True,
         timeout=15,
     )
 
-    # Step 5: check exit code
+    # Step 6: check exit code
     if result.returncode != 0:
         raise RuntimeError(f"Tunnel failed: {result.stderr.strip()}")

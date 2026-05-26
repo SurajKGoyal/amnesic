@@ -32,6 +32,14 @@ pip install "amnesic[mssql]"
 pipx install amnesic
 ```
 
+**Install uv** (if you want to use `uv tool install` or `uvx`):
+
+```bash
+brew install uv                                             # macOS (Homebrew)
+curl -LsSf https://astral.sh/uv/install.sh | sh            # Linux / macOS
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex" # Windows
+```
+
 After install, `amnesic --help` should work from any terminal — you're ready to run `amnesic init`.
 
 ---
@@ -51,6 +59,16 @@ The wizard:
 - writes the connection block to `~/.config/amnesic/connections.toml`
 
 Then add amnesic to your AI client (mcp.json snippet below) and restart.
+
+### Where amnesic stores things
+
+| File | macOS / Linux | Windows |
+|---|---|---|
+| Config | `~/.config/amnesic/connections.toml` | `%APPDATA%\amnesic\connections.toml` |
+| Secrets | `~/.config/amnesic/.env` (chmod 600) | `%APPDATA%\amnesic\.env` (user profile ACL) |
+| Knowledge | `~/.config/amnesic/knowledge_<name>.db` | `%APPDATA%\amnesic\knowledge_<name>.db` |
+
+Set `$AMNESIC_HOME` (or `$XDG_CONFIG_HOME` on Linux) to override the location.
 
 ### Adding more connections later
 
@@ -107,7 +125,11 @@ Add to `~/.claude/mcp.json`:
 
 ### Claude Desktop
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Add to your platform's Claude Desktop config:
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -138,7 +160,7 @@ Add to `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` globally):
 If you'd rather not install amnesic on your system, use `uvx` or `pipx` to fetch it each time the MCP client starts. Note the driver extras must be passed explicitly:
 
 ```json
-// uvx — requires `uv` installed (`brew install uv`)
+// uvx — requires `uv` installed (see Install section for per-OS instructions)
 {
   "mcpServers": {
     "amnesic": {
@@ -291,7 +313,8 @@ port = 11433
 database = "OrdersDB"
 user = "${ORDERS_USER}"
 password = "${ORDERS_PROD_PASSWORD}"
-tunnel_script = "~/.scripts/mssql-tunnel.sh"  # optional SSH tunnel
+tunnel_script = "~/.scripts/mssql-tunnel.sh"     # macOS / Linux (bash)
+# tunnel_script = "C:/scripts/mssql-tunnel.ps1"  # Windows (PowerShell)
 
 [connections.orders.staging]
 driver = "mssql"
@@ -313,7 +336,8 @@ password = "${ANALYTICS_DB_PASSWORD}"
 # SQLite — no credentials needed
 [connections.local]
 driver = "sqlite"
-database = "/Users/me/data/local.db"
+database = "/absolute/path/to/local.db"       # macOS / Linux
+# database = "C:/path/to/local.db"            # Windows (use forward slashes)
 ```
 
 Use `${ENV_VAR}` for credentials — never hardcode passwords.
@@ -340,7 +364,7 @@ Canonical connection names use dot notation: `orders.prod`, `orders.staging`, `a
 - **Read-only enforcement**: two layers — static SQL analysis rejects any write/DDL statement before a connection opens, plus every query runs inside an immediately-rolled-back transaction.
 - **No credentials in responses**: `db_list_connections` strips passwords and usernames from output.
 - **Credentials via env vars**: `${ENV_VAR}` expansion at load time — secrets never touch the config file on disk.
-- **Secure .env storage**: `amnesic init` / `amnesic set-secret` always chmod 600 the `.env` file after writing.
+- **Secure .env storage**: `amnesic init` / `amnesic set-secret` always chmod 600 the `.env` file after writing. On macOS/Linux, the `.env` file is `chmod 0o600` so only your user can read it. On Windows, the `.env` file lives in `%APPDATA%` which is restricted to your user profile by default — file ACLs are handled by Windows itself.
 - **Identifier validation**: table names, schema names, and database names are validated against `[A-Za-z0-9_]` before any interpolation into SQL.
 
 ---

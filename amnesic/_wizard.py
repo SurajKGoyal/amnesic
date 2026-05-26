@@ -12,15 +12,16 @@ from __future__ import annotations
 
 import os
 import re
-import stat
 from pathlib import Path
 from typing import Any
 
 import click
 
-_CONFIG_DIR = Path.home() / ".config" / "amnesic"
-_CONFIG_FILE = _CONFIG_DIR / "connections.toml"
-_ENV_FILE = _CONFIG_DIR / ".env"
+from amnesic._paths import config_dir, connections_path, env_path, secure_file
+
+_CONFIG_DIR = config_dir()
+_CONFIG_FILE = connections_path()
+_ENV_FILE = env_path()
 
 _CONN_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)?$")
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
@@ -327,4 +328,4 @@ def upsert_env_var(name: str, value: str) -> None:
         content += "\n"
 
     _ENV_FILE.write_text(content)
-    os.chmod(_ENV_FILE, stat.S_IRUSR | stat.S_IWUSR)  # 0o600
+    secure_file(_ENV_FILE)

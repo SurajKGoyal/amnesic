@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -133,6 +134,7 @@ def test_upsert_env_var_preserves_other_keys(isolated_config: Path) -> None:
     assert "GAMMA=ggg" in content
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="chmod not supported on Windows")
 def test_upsert_env_var_sets_chmod_600(isolated_config: Path) -> None:
     """After any write, the .env file must have mode 0o600."""
     upsert_env_var("SECURE_KEY", "s3cr3t")

@@ -16,9 +16,11 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-_CONFIG_DIR = Path.home() / ".config" / "amnesic"
-_CONFIG_FILE = _CONFIG_DIR / "connections.toml"
-_ENV_FILE = _CONFIG_DIR / ".env"
+from amnesic._paths import config_dir, connections_path, env_path
+
+_CONFIG_DIR = config_dir()
+_CONFIG_FILE = connections_path()
+_ENV_FILE = env_path()
 
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
@@ -62,12 +64,14 @@ _TEMPLATE = """\
 # database = "OrdersDB"
 # user = "${ORDERS_USER}"
 # password = "${ORDERS_PASSWORD}"
-# tunnel_script = "~/.scripts/mssql-tunnel.sh"
+# tunnel_script = "/path/to/mssql-tunnel.sh"   # macOS / Linux (bash)
+# tunnel_script = "C:/scripts/mssql-tunnel.ps1"  # Windows (PowerShell)
 
 # Example: SQLite (no credentials needed)
 # [connections.local]
 # driver = "sqlite"
-# database = "/Users/me/data/local.db"
+# database = "/absolute/path/to/local.db"      # macOS / Linux
+# database = "C:/path/to/local.db"             # Windows (use forward slashes)
 """
 
 console = Console()

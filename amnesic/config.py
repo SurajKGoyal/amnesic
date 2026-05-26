@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from amnesic._paths import env_path as _amnesic_env_path, connections_path as _amnesic_connections_path
+
 try:
     import tomllib  # Python 3.11+
 except ImportError:
@@ -34,7 +36,7 @@ except ImportError:
 
 
 _ENV_VAR_RE = re.compile(r"\$\{([^}]+)\}")
-_ENV_FILE = Path.home() / ".config" / "amnesic" / ".env"
+_ENV_FILE = _amnesic_env_path()
 _env_loaded = False
 
 
@@ -208,7 +210,7 @@ def load_config(path: str | Path | None = None) -> dict[str, ConnectionConfig]:
         if env_path:
             path = Path(env_path)
         else:
-            path = Path.home() / ".config" / "amnesic" / "connections.toml"
+            path = _amnesic_connections_path()
 
     path = Path(path)
     if not path.exists():
