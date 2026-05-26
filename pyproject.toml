@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "amnesic"
+version = "0.1.0"
+description = "The MCP server with the most ironic name in the registry — persistent semantic memory for your SQL databases"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Suraj Goyal", email = "sgoyal275@gmail.com" }]
+keywords = ["mcp", "llm", "sql", "database", "claude", "ai-tools", "postgres", "mysql", "mssql"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+]
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "sqlalchemy>=2.0",
+    "click>=8.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg2-binary>=2.9"]
+mysql    = ["pymysql>=1.1"]
+mssql    = ["pymssql>=2.2"]
+all      = ["psycopg2-binary>=2.9", "pymysql>=1.1", "pymssql>=2.2"]
+dev      = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+amnesic = "amnesic.cli:cli"
+
+[project.entry-points."mcp.servers"]
+amnesic = "amnesic.server:mcp"
+
+[project.urls]
+Homepage = "https://github.com/surajgoyal/amnesic"
+Repository = "https://github.com/surajgoyal/amnesic"
+Issues = "https://github.com/surajgoyal/amnesic/issues"
