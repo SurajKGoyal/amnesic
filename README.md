@@ -270,6 +270,14 @@ Tables missing from the target schema cache are skipped with a clear reason. Col
 
 ---
 
+## Roadmap
+
+What's coming: knowledge lifecycle management (v0.2 — `db_deprecate`, drift detection, export/import for team handoff), query intelligence (v0.3 — `db_explain`, query history), team sharing (v0.4), and more. See [ROADMAP.md](./ROADMAP.md) for the full picture.
+
+Have an idea? [Open an issue.](https://github.com/SurajKGoyal/amnesic/issues/new)
+
+---
+
 ## Track usage
 
 [pypistats.org/packages/amnesic](https://pypistats.org/packages/amnesic)
