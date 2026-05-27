@@ -53,14 +53,16 @@ brew install uv                                            # macOS
 curl -LsSf https://astral.sh/uv/install.sh | sh            # Linux / macOS
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex" # Windows
 
-uv tool install "amnesic[mssql]"
+uv tool install amnesic
 ```
 
 **Or plain `pip`** (installs into your active Python env):
 
 ```bash
-pip install "amnesic[mssql]"
+pip install amnesic
 ```
+
+> Whichever you pick, `amnesic init` asks which database you'll connect to and prints the one extra command to install that driver — no need to commit to extras up front.
 
 </details>
 
@@ -383,12 +385,12 @@ Canonical connection names use dot notation: `orders.prod`, `orders.staging`, `a
 
 ## Supported databases
 
-| Database | Driver | Extra |
-|----------|--------|-------|
-| PostgreSQL | psycopg2 | `pip install "amnesic[postgres]"` |
-| MySQL / MariaDB | pymysql | `pip install "amnesic[mysql]"` |
-| Microsoft SQL Server | pymssql | `pip install "amnesic[mssql]"` |
-| SQLite | built-in | no extra needed |
+| Database | Python driver | Installed by |
+|----------|---------------|--------------|
+| PostgreSQL | `psycopg2-binary` | wizard nudge when you pick Postgres, or `amnesic[postgres]` extras |
+| MySQL / MariaDB | `pymysql` | wizard nudge when you pick MySQL, or `amnesic[mysql]` extras |
+| Microsoft SQL Server | `pymssql` | wizard nudge when you pick MSSQL, or `amnesic[mssql]` extras |
+| SQLite | stdlib `sqlite3` | always available — no extra |
 
 ---
 
