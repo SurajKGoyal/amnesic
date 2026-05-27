@@ -419,6 +419,50 @@ Only `SELECT` and `WITH ... SELECT` reach the database. Comments are stripped be
 
 ---
 
+## Is this safe with my data?
+
+amnesic is local-only and protocol-only. It doesn't introduce a new external trust boundary — **the trust boundary is wherever your MCP client sends data, not amnesic itself.** Choosing the AI client decides the policy that applies to your rows.
+
+```
+your DB → amnesic (local) → MCP client → your AI deployment
+                                          ↑ trust boundary lives here
+```
+
+The honest question to ask, whether you're indie or enterprise:
+
+**Do I trust my AI client with the data in this database?**
+
+If yes — and for most setups, the answer is yes — you're good. That covers:
+
+- Solo devs on Claude Pro / Cursor / Copilot using their own projects, dev DBs, or test data
+- Side projects querying personal SQLite or self-hosted Postgres
+- Open-source maintainers working with public schemas
+- Teams on enterprise AI with explicit isolation: **AWS Bedrock** (tenant + IAM), **Azure OpenAI** (region-pinned, your subscription), **Anthropic Enterprise** (zero data retention, training opt-out), **Vertex AI** (your GCP project), **self-hosted** (Ollama, vLLM, on-prem Claude/GPT — data never leaves the network)
+- Anyone on a paid AI plan with zero-retention guarantees and a DPA covering your use
+
+### Worth a closer look if
+
+- Your DB holds **data belonging to other people** (users, customers, patients) and you haven't verified your AI provider's terms cover that processing
+- You're on **consumer-tier AI** (free / personal Pro) AND working with regulated data — **PHI** (HIPAA covered entity), **cardholder data** (PCI-DSS), **restricted PII** under GDPR / India's DPDP Act
+- Your employer has an **explicit policy** restricting external AI tool use on prod DBs
+- You're under **data-residency** rules where rows can't leave a specific region
+
+### Data minimization is built in
+
+A property of the design, not an afterthought: the annotation layer means the AI answers most schema questions from a **local SQLite knowledge file** — no `db_query` runs, no row data is sent anywhere.
+
+- *"What does status=3 mean?"* → resolves from your saved annotation
+- *"How do orders join users?"* → resolves from the FK graph
+- *"Which tables have a `created_at` column?"* → resolves from schema cache
+
+For purely structural exploration, six tools never touch your data: `db_list_tables`, `db_get_schema`, `db_search`, `db_annotate`, `db_discover_relationships`, `db_get_relationships`. They return metadata only.
+
+That's measurably less data movement than a "naked" SQL MCP — which has to run `SELECT DISTINCT status FROM orders` every time the AI is confused about an enum. amnesic answers it once from local annotations.
+
+> **Disclaimer**: amnesic is provided as-is under the MIT License (no warranty, no liability — see [LICENSE](LICENSE)). This section is not legal or compliance advice. Your use of amnesic, and the AI client you connect it to, is your responsibility. If you handle regulated data, consult your security / compliance team before pointing it at production.
+
+---
+
 ## Roadmap
 
 What's coming: knowledge lifecycle management (v0.2 — `db_deprecate`, drift detection, export/import for team handoff), query intelligence (v0.3 — `db_explain`, query history), team sharing (v0.4), and more. See [ROADMAP.md](./ROADMAP.md) for the full picture.
