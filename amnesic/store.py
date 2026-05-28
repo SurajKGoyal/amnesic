@@ -130,6 +130,12 @@ class KnowledgeStore:
 
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
+            # busy_timeout: when a second process holds the write lock (e.g. two
+            # MCP clients pointed at the same knowledge file), wait up to 5s for
+            # it to clear instead of failing immediately with SQLITE_BUSY. WAL
+            # handles concurrent reads; this makes concurrent cross-process
+            # writes queue rather than error.
+            self._conn.execute("PRAGMA busy_timeout=5000")
             self._conn.execute(_CREATE_SCHEMA_CACHE)
             self._conn.execute(_CREATE_TABLE_KNOWLEDGE)
             self._conn.execute(_CREATE_COLUMN_KNOWLEDGE)

@@ -29,6 +29,22 @@ def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> KnowledgeStore:
 
 
 # ---------------------------------------------------------------------------
+# Concurrency pragmas
+# ---------------------------------------------------------------------------
+
+class TestConcurrencyPragmas:
+    def test_wal_mode_enabled(self, store):
+        mode = store._conn.execute("PRAGMA journal_mode").fetchone()[0]
+        assert mode.lower() == "wal"
+
+    def test_busy_timeout_set(self, store):
+        # Cross-process writers should queue (up to 5s) instead of failing
+        # immediately with SQLITE_BUSY.
+        timeout = store._conn.execute("PRAGMA busy_timeout").fetchone()[0]
+        assert timeout == 5000
+
+
+# ---------------------------------------------------------------------------
 # Schema cache
 # ---------------------------------------------------------------------------
 
