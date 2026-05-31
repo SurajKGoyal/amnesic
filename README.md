@@ -1,11 +1,9 @@
 # amnesic — the MCP server with the most ironic name in the registry
 
 [![PyPI version](https://img.shields.io/pypi/v/amnesic.svg)](https://pypi.org/project/amnesic/)
-[![Downloads](https://img.shields.io/pypi/dm/amnesic.svg)](https://pypistats.org/packages/amnesic)
 [![Python](https://img.shields.io/pypi/pyversions/amnesic.svg)](https://pypi.org/project/amnesic/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![MCP Registry](https://img.shields.io/badge/MCP-Registry-7d6ad9.svg)](https://registry.modelcontextprotocol.io)
-[![GitHub stars](https://img.shields.io/github/stars/SurajKGoyal/amnesic?style=social)](https://github.com/SurajKGoyal/amnesic)
 
 **Persistent semantic memory for your SQL databases. The name is ironic — it remembers everything.**
 
