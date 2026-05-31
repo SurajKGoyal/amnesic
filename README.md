@@ -1,8 +1,19 @@
 # amnesic — the MCP server with the most ironic name in the registry
 
+[![PyPI version](https://img.shields.io/pypi/v/amnesic.svg)](https://pypi.org/project/amnesic/)
+[![Downloads](https://img.shields.io/pypi/dm/amnesic.svg)](https://pypistats.org/packages/amnesic)
+[![Python](https://img.shields.io/pypi/pyversions/amnesic.svg)](https://pypi.org/project/amnesic/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![MCP Registry](https://img.shields.io/badge/MCP-Registry-7d6ad9.svg)](https://registry.modelcontextprotocol.io)
+[![GitHub stars](https://img.shields.io/github/stars/SurajKGoyal/amnesic?style=social)](https://github.com/SurajKGoyal/amnesic)
+
 **Persistent semantic memory for your SQL databases. The name is ironic — it remembers everything.**
 
 *"The MCP server with the most ironic name in the registry. It's anything but amnesic — it remembers your database so your AI doesn't have to."*
+
+**Works with** Claude Code · Claude Desktop · Cursor · VS Code · Cline · Windsurf — any [MCP-compatible client](https://modelcontextprotocol.io/clients).
+
+**Available on** [Official MCP Registry](https://registry.modelcontextprotocol.io) · [Claude Code plugin marketplace](https://github.com/SurajKGoyal/amnesic-marketplace)
 
 > 🔒 **Read-only by design.** amnesic refuses to execute `INSERT`, `UPDATE`, `DELETE`, `DROP`, `TRUNCATE`, `ALTER`, `CREATE`, `EXEC`, `MERGE`, `GRANT`, `REVOKE` — and any write statement smuggled inside a `WITH` CTE. Two layers of defense: static SQL analysis rejects the statement before connecting, **and** every query runs inside a transaction that is immediately rolled back. Safe to point at prod. [Details ↓](#safety--read-only-enforcement)
 
@@ -22,6 +33,8 @@ Every session with an AI starts cold. You spend the first few minutes re-explain
 pipx install amnesic            # install the core
 amnesic init                    # interactive wizard
 ```
+
+> ⚡ **Try it without credentials.** Run `amnesic init --demo` instead — it adds a self-contained SQLite sample DB (e-commerce schema: customers / products / orders with FKs and an enum column) so you can exercise every tool in under a minute. Great for a first look before pointing amnesic at a real database.
 
 The wizard asks which database type you're connecting to and tells you the **one** command to run if its driver isn't installed yet — you never need to guess extras up front.
 
@@ -119,7 +132,19 @@ Once amnesic is installed with the right driver extras (see [Quickstart](#quicks
 
 ### Claude Code
 
-Add to `~/.claude/mcp.json`:
+**One-line install** (recommended — no JSON editing). Inside Claude Code:
+
+```
+/plugin marketplace add SurajKGoyal/amnesic-marketplace
+/plugin install amnesic@amnesic
+```
+
+That wires amnesic as an MCP server automatically. Source: [SurajKGoyal/amnesic-marketplace](https://github.com/SurajKGoyal/amnesic-marketplace).
+
+<details>
+<summary><b>Or wire it by hand — edit <code>~/.claude/mcp.json</code></b></summary>
+
+<br/>
 
 ```json
 {
@@ -130,6 +155,8 @@ Add to `~/.claude/mcp.json`:
   }
 }
 ```
+
+</details>
 
 ### Claude Desktop
 
@@ -151,6 +178,15 @@ Add to your platform's Claude Desktop config:
 
 ### Cursor
 
+**One-click install** — click the button below and Cursor wires it up for you:
+
+<a href="https://cursor.com/install-mcp?name=amnesic&config=eyJjb21tYW5kIjoiYW1uZXNpYyJ9"><img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Add amnesic to Cursor" height="32"></a>
+
+<details>
+<summary><b>Or wire it by hand — edit <code>.cursor/mcp.json</code></b></summary>
+
+<br/>
+
 Add to `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` globally):
 
 ```json
@@ -162,6 +198,8 @@ Add to `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` globally):
   }
 }
 ```
+
+</details>
 
 ### Without a global install (ephemeral)
 

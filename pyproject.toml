@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "amnesic"
-version = "0.1.15"
+version = "0.1.16"
 description = "The MCP server with the most ironic name in the registry — persistent semantic memory for your SQL databases"
 readme = "README.md"
 requires-python = ">=3.11"
