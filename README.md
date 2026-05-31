@@ -178,7 +178,7 @@ Add to your platform's Claude Desktop config:
 
 **One-click install** — click the button below and Cursor wires it up for you:
 
-<a href="https://cursor.com/install-mcp?name=amnesic&config=eyJjb21tYW5kIjoiYW1uZXNpYyJ9"><img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Add amnesic to Cursor" height="32"></a>
+<a href="https://cursor.com/en-US/install-mcp?name=amnesic&config=eyJjb21tYW5kIjoiYW1uZXNpYyJ9"><img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Add amnesic to Cursor" height="32"></a>
 
 <details>
 <summary><b>Or wire it by hand — edit <code>.cursor/mcp.json</code></b></summary>
