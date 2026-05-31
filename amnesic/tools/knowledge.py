@@ -35,7 +35,9 @@ def db_annotate(
     Both can be done in a single call.
 
     Args:
-        table:              Fully qualified table name (e.g. "dbo.Orders").
+        table:              Table name, optionally schema-qualified to match your
+                            DB — e.g. "users", "public.users" (Postgres),
+                            "dbo.Orders" (MSSQL), "mydb.orders" (MySQL).
         connection:         Connection name. Defaults to first defined.
         table_description:  Human-readable description of what the table is for.
         table_aliases:      List of alternative names this table is known by.

@@ -99,7 +99,9 @@ def db_get_schema(
     previous db_annotate() calls into the response.
 
     Args:
-        table:         Table name, optionally qualified (e.g. "dbo.Orders", "Orders").
+        table:         Table name, optionally schema-qualified. Use whatever your
+                       DB uses — e.g. "users", "public.users" (Postgres),
+                       "dbo.Orders" (MSSQL), "mydb.orders" (MySQL).
         connection:    Connection name. Defaults to first defined.
         force_refresh: Bypass cache and fetch fresh schema from the database.
 
@@ -185,7 +187,9 @@ def db_annotate(
     how a table relates to another, or what a table is used for.
 
     Args:
-        table:              Table name (e.g. "dbo.Orders").
+        table:              Table name, optionally schema-qualified to match your
+                            DB — e.g. "users", "public.users" (Postgres),
+                            "dbo.Orders" (MSSQL), "mydb.orders" (MySQL).
         connection:         Connection name. Defaults to first defined.
         table_description:  Human-readable description of the table's purpose.
         table_aliases:      Alternative names the table is known by.

@@ -210,8 +210,9 @@ def db_get_schema(
     annotations (descriptions, enum values, foreign keys) into the response.
 
     Args:
-        table:         Table name, optionally qualified (e.g. "dbo.Orders" or
-                       "Orders"). Format is driver-dependent.
+        table:         Table name, optionally schema-qualified to match your DB —
+                       e.g. "users", "public.users" (Postgres), "dbo.Orders"
+                       (MSSQL), "mydb.orders" (MySQL). Format is driver-dependent.
         connection:    Connection name from connections.toml. Defaults to first.
         force_refresh: Skip the cache and fetch fresh from the database.
 

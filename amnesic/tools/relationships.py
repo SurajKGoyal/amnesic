@@ -199,7 +199,9 @@ def db_get_relationships(
     Run db_discover_relationships first to populate the graph from the database.
 
     Args:
-        table:      Table name (e.g. "Orders" or "dbo.Orders").
+        table:      Table name, optionally schema-qualified to match your DB —
+                    e.g. "users", "public.users" (Postgres), "dbo.Orders"
+                    (MSSQL), "mydb.orders" (MySQL).
         connection: Connection name from connections.toml. Defaults to first.
         depth:      BFS depth (default 1, max recommended 3).
 
