@@ -1,4 +1,16 @@
-name: Publish to PyPI
+name: Release (PyPI + GitHub Release + MCP Registry)
+
+# One tag push publishes everywhere, in the correct order:
+#   1. Guard — every version source must match the tag, or the release fails loudly.
+#   2. PyPI    — build + publish (OIDC Trusted Publishing, no token).
+#   3. GitHub  — create the Release with auto-generated notes.
+#   4. Wait    — until the new version is live on PyPI (the registry verifies
+#                ownership by reading the package's PyPI description).
+#   5. Registry — publish server.json via GitHub OIDC (no token).
+#
+# To cut a release: bump pyproject.toml, amnesic/__init__.py, and BOTH version
+# fields in server.json to the same value, commit, then:
+#   git tag vX.Y.Z && git push origin vX.Y.Z
 
 on:
   push:
@@ -6,30 +18,88 @@ on:
       - "v*"
 
 jobs:
-  publish:
-    name: Build and publish
+  release:
+    name: Build and publish everywhere
     runs-on: ubuntu-latest
 
-    # Trusted Publishing — no token, no secrets to manage.
-    # Configure once at https://pypi.org/manage/account/publishing/
     permissions:
-      id-token: write   # required for OIDC to PyPI
-      contents: read
+      id-token: write   # OIDC — used by BOTH PyPI Trusted Publishing and the MCP Registry
+      contents: write   # required for `gh release create`
 
     steps:
       - uses: actions/checkout@v4
+
+      # 1. Guard: tag must equal every version source. Prevents the
+      #    "server.json left stale" desync from ever shipping silently.
+      - name: Verify version consistency
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "Tag version: $TAG"
+
+          PYPROJECT=$(grep -m1 '^version' pyproject.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          INIT=$(grep '__version__' amnesic/__init__.py | sed -E 's/.*"([^"]+)".*/\1/')
+          SJ_TOP=$(python -c "import json;print(json.load(open('server.json'))['version'])")
+          SJ_PKG=$(python -c "import json;print(json.load(open('server.json'))['packages'][0]['version'])")
+
+          echo "pyproject.toml:      $PYPROJECT"
+          echo "__init__.py:         $INIT"
+          echo "server.json (top):   $SJ_TOP"
+          echo "server.json (pkg):   $SJ_PKG"
+
+          fail=0
+          for v in "$PYPROJECT" "$INIT" "$SJ_TOP" "$SJ_PKG"; do
+            if [ "$v" != "$TAG" ]; then fail=1; fi
+          done
+          if [ "$fail" -eq 1 ]; then
+            echo "::error::Version mismatch — every source must equal the tag ($TAG). Bump them and re-tag."
+            exit 1
+          fi
+          echo "All version sources match $TAG."
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install build tools
-        run: pip install build
-
       - name: Build distribution
-        run: python -m build
+        run: pip install build && python -m build
 
+      # 2. PyPI — OIDC Trusted Publishing (configured once at
+      #    https://pypi.org/manage/account/publishing/). No token.
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        # No password/token needed — OIDC handles authentication via Trusted Publisher.
+
+      # 3. GitHub Release with auto-generated notes from the commits.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF#refs/tags/}" --generate-notes --title "${GITHUB_REF#refs/tags/}"
+
+      # 4. Wait until the version is queryable on PyPI — the registry fetches the
+      #    package's PyPI description to verify the mcp-name ownership marker.
+      - name: Wait for PyPI to serve the new version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          for i in $(seq 1 30); do
+            if curl -fsSL "https://pypi.org/pypi/amnesic/$TAG/json" >/dev/null 2>&1; then
+              echo "amnesic $TAG is live on PyPI."
+              exit 0
+            fi
+            echo "Attempt $i: not live yet, waiting 10s..."
+            sleep 10
+          done
+          echo "::error::amnesic $TAG did not appear on PyPI within 5 minutes."
+          exit 1
+
+      # 5. Install the registry CLI and publish via GitHub OIDC.
+      #    The io.github.SurajKGoyal/* namespace is auto-authorized for OIDC
+      #    tokens from this repo — no allowlist step needed.
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish
