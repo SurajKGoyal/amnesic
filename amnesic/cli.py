@@ -16,6 +16,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from amnesic import __version__
 from amnesic._paths import config_dir, connections_path, env_path
 
 _CONFIG_DIR = config_dir()
@@ -78,6 +79,7 @@ console = Console()
 
 
 @click.group(invoke_without_command=True)
+@click.version_option(__version__, "-V", "--version", prog_name="amnesic")
 @click.pass_context
 def cli(ctx: click.Context) -> None:
     """amnesic — the MCP server that remembers your database.
