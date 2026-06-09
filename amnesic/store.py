@@ -698,6 +698,58 @@ class KnowledgeStore:
             cur = self._conn.execute("SELECT table_fqn FROM table_knowledge")
             return [r["table_fqn"] for r in cur.fetchall()]
 
+    # ------------------------------------------------------------------
+    # Hard delete (db_forget)
+    # ------------------------------------------------------------------
+
+    def forget_table(self, table_fqn: str, cascade: bool = False) -> dict[str, Any]:
+        """Permanently delete a table annotation. Cascade is opt-in.
+
+        Without cascade, removes ONLY the table_knowledge row. With cascade,
+        also removes every column_knowledge row for the table and every
+        table_relationships edge touching it. FTS stays consistent via the
+        delete triggers. Returns counts of what was removed.
+        """
+        key = table_fqn.lower().strip()
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM table_knowledge WHERE table_fqn = ?", (key,)
+            )
+            removed_table = cur.rowcount > 0
+            removed_columns = 0
+            removed_relationships = 0
+            if cascade:
+                cur = self._conn.execute(
+                    "DELETE FROM column_knowledge WHERE table_fqn = ?", (key,)
+                )
+                removed_columns = cur.rowcount
+                cur = self._conn.execute(
+                    "DELETE FROM table_relationships "
+                    "WHERE from_table = ? OR to_table = ?",
+                    (key, key),
+                )
+                removed_relationships = cur.rowcount
+            self._conn.commit()
+        return {
+            "removed_table": removed_table,
+            "removed_columns": removed_columns,
+            "removed_relationships": removed_relationships,
+        }
+
+    def forget_column(self, table_fqn: str, column_name: str) -> bool:
+        """Permanently delete a single column annotation. Returns True if a row
+        was removed. FTS stays consistent via the delete trigger."""
+        key = table_fqn.lower().strip()
+        col_key = column_name.lower().strip()
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM column_knowledge WHERE table_fqn = ? AND column_name = ?",
+                (key, col_key),
+            )
+            removed = cur.rowcount > 0
+            self._conn.commit()
+        return removed
+
     def get_all_column_knowledge(self, table_fqn: str) -> list[dict[str, Any]]:
         """Return all column knowledge rows for a table."""
         key = table_fqn.lower().strip()

@@ -532,3 +532,69 @@ class TestDeprecation:
         store.save_table_knowledge("dbo.invoices", description="billing invoices")
         results = {r["table_fqn"]: r for r in store.search("billing", target="tables")}
         assert results["dbo.invoices"]["deprecated"] is False
+
+
+# ---------------------------------------------------------------------------
+# v0.2 hard delete (db_forget backing)
+# ---------------------------------------------------------------------------
+
+class TestForget:
+    def _seed(self, store):
+        store.save_table_knowledge("dbo.orders", description="Orders", aliases=["sales"])
+        store.save_column_knowledge("dbo.orders", "status", description="status code")
+        store.save_column_knowledge("dbo.orders", "user_id", foreign_key="users.id")
+        store.save_relationship("dbo.orders", "user_id", "dbo.users", "id")
+
+    def test_forget_table_no_cascade_keeps_columns_and_rels(self, store):
+        self._seed(store)
+        counts = store.forget_table("dbo.orders", cascade=False)
+        assert counts["removed_table"] is True
+        assert counts["removed_columns"] == 0
+        assert counts["removed_relationships"] == 0
+        # table annotation gone...
+        assert store.get_table_knowledge("dbo.orders") is None
+        # ...but columns + relationships remain.
+        assert store.get_column_knowledge("dbo.orders", "status") is not None
+        assert len(store.get_all_relationships()) == 1
+
+    def test_forget_column_only(self, store):
+        self._seed(store)
+        removed = store.forget_column("dbo.orders", "status")
+        assert removed is True
+        assert store.get_column_knowledge("dbo.orders", "status") is None
+        # other column + table untouched
+        assert store.get_column_knowledge("dbo.orders", "user_id") is not None
+        assert store.get_table_knowledge("dbo.orders") is not None
+
+    def test_forget_cascade_removes_everything(self, store):
+        self._seed(store)
+        counts = store.forget_table("dbo.orders", cascade=True)
+        assert counts["removed_table"] is True
+        assert counts["removed_columns"] == 2
+        assert counts["removed_relationships"] == 1
+        assert store.get_table_knowledge("dbo.orders") is None
+        assert store.get_column_knowledge("dbo.orders", "status") is None
+        assert store.get_all_relationships() == []
+
+    def test_forget_missing_table_reports_zero(self, store):
+        counts = store.forget_table("dbo.nope", cascade=True)
+        assert counts["removed_table"] is False
+        assert counts["removed_columns"] == 0
+        assert counts["removed_relationships"] == 0
+
+    def test_forget_keeps_fts_consistent(self, store):
+        store.save_table_knowledge("dbo.orders", description="customer payment records")
+        # present in search before
+        assert any(r["table_fqn"] == "dbo.orders" for r in store.search("payment"))
+        store.forget_table("dbo.orders")
+        # gone from search after (delete trigger fired)
+        assert not any(r["table_fqn"] == "dbo.orders" for r in store.search("payment"))
+
+    def test_cascade_only_affects_target_table(self, store):
+        self._seed(store)
+        store.save_table_knowledge("dbo.invoices", description="Invoices")
+        store.save_column_knowledge("dbo.invoices", "amount", description="amt")
+        store.forget_table("dbo.orders", cascade=True)
+        # sibling table fully intact
+        assert store.get_table_knowledge("dbo.invoices") is not None
+        assert store.get_column_knowledge("dbo.invoices", "amount") is not None

@@ -144,6 +144,64 @@ def db_deprecate(
     }
 
 
+def db_forget(
+    table: str,
+    connection: str | None = None,
+    column: str | None = None,
+    cascade: bool = False,
+) -> dict:
+    """
+    Permanently delete a table or column annotation. Safe by default.
+
+    Use to remove a wrong annotation, or to clean up after a table/column was
+    dropped from the database (pairs with db_detect_drift). This is a hard
+    delete — unlike db_deprecate, it is NOT reversible.
+
+    Scope (cascade is opt-in so you can't nuke a table by accident):
+      - db_forget(table)                -> removes ONLY the table's own
+                                           annotation. Columns + relationships
+                                           are left untouched.
+      - db_forget(table, column="x")    -> removes ONLY that column's annotation.
+      - db_forget(table, cascade=True)  -> removes the table annotation AND all
+                                           its column annotations AND all
+                                           relationships touching the table.
+
+    Only the local knowledge store is changed — never the live database.
+
+    Args:
+        table:      Table name, optionally schema-qualified (e.g. "users",
+                    "public.users", "dbo.Orders", "mydb.orders").
+        connection: Connection name. Defaults to first defined.
+        column:     Column annotation to delete. Omit to target the table.
+        cascade:    When targeting a table, also delete its column annotations
+                    and relationships. Ignored when column is given.
+
+    Returns:
+        {table, connection, column, removed_table, removed_columns, removed_relationships}
+    """
+    connections = load_config()
+    conn_cfg = resolve_connection(connection, connections)
+    store = get_store(conn_cfg.name)
+    fqn, *_ = normalize_fqn(table, conn_cfg)
+
+    if column is not None:
+        removed = store.forget_column(fqn, column)
+        counts = {
+            "removed_table": False,
+            "removed_columns": 1 if removed else 0,
+            "removed_relationships": 0,
+        }
+    else:
+        counts = store.forget_table(fqn, cascade=cascade)
+
+    return {
+        "table": fqn,
+        "connection": conn_cfg.name,
+        "column": column,
+        **counts,
+    }
+
+
 def db_sync_knowledge(
     from_connection: str,
     to_connection: str,

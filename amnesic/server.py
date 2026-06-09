@@ -15,6 +15,7 @@ from amnesic.tools.connections import db_list_connections as _db_list_connection
 from amnesic.tools.drift import db_detect_drift as _db_detect_drift
 from amnesic.tools.knowledge import db_annotate as _db_annotate
 from amnesic.tools.knowledge import db_deprecate as _db_deprecate
+from amnesic.tools.knowledge import db_forget as _db_forget
 from amnesic.tools.knowledge import db_sync_knowledge as _db_sync_knowledge
 from amnesic.tools.query import db_query as _db_query
 from amnesic.tools.relationships import db_discover_relationships as _db_discover_relationships
@@ -290,6 +291,42 @@ def db_list_connections() -> dict:
         {connections: [{name, driver, database, server}]}
     """
     return _db_list_connections()
+
+
+@mcp.tool()
+def db_forget(
+    table: str,
+    connection: str | None = None,
+    column: str | None = None,
+    cascade: bool = False,
+) -> dict:
+    """
+    Permanently delete a table or column annotation. Safe by default — NOT reversible.
+
+    Use to remove a wrong annotation, or to clean up after a table/column was
+    dropped from the DB (pairs with db_detect_drift). Unlike db_deprecate, this
+    hard-deletes. Cascade is opt-in so you can't nuke a table by accident:
+      - db_forget(table)               -> ONLY the table's own annotation
+      - db_forget(table, column="x")   -> ONLY that column's annotation
+      - db_forget(table, cascade=True) -> the table + all its column annotations
+                                          + all relationships touching it
+
+    Only the local knowledge store is changed — never the live database.
+
+    Args:
+        table:      Table name, optionally schema-qualified (e.g. "users",
+                    "public.users", "dbo.Orders", "mydb.orders").
+        connection: Connection name. Defaults to first defined.
+        column:     Column annotation to delete. Omit to target the table.
+        cascade:    When targeting a table, also delete its columns +
+                    relationships. Ignored when column is given.
+
+    Returns:
+        {table, connection, column, removed_table, removed_columns, removed_relationships}
+    """
+    return _db_forget(
+        table=table, connection=connection, column=column, cascade=cascade
+    )
 
 
 @mcp.tool()
