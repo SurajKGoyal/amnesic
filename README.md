@@ -254,6 +254,9 @@ Add to `.vscode/mcp.json`:
 | `db_get_schema(table, connection)` | Column schema merged with saved annotations |
 | `db_query(sql, connection)` | Execute a read-only SELECT query |
 | `db_annotate(table, connection, ...)` | Persist semantic annotations for tables/columns |
+| `db_deprecate(table, connection, column?, reason?, undo?)` | Soft-retire a stale annotation — flagged (and warned) but kept, reversible |
+| `db_detect_drift(connection)` | Audit annotations vs the live schema — find orphaned annotations + undocumented tables |
+| `db_forget(table, connection, column?, cascade?)` | Hard-delete an annotation (cascade opt-in) — permanent |
 | `db_sync_knowledge(from, to)` | Copy annotations between connections (e.g. staging → prod) |
 | `db_discover_relationships(connection)` | Discover all FK relationships from the live DB |
 | `db_get_relationships(table, connection)` | Navigate the FK graph for JOIN planning |

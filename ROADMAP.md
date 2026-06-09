@@ -29,22 +29,22 @@ BM25-ranked full-text search over the knowledge layer via SQLite FTS5. Zero new 
 
 ---
 
-## v0.2.0 — Knowledge Lifecycle Management 🔜 *Next*
+## v0.2.0 — Knowledge Lifecycle Management ✅ *Shipped*
 
-When developers rotate projects, annotations shouldn't die with their access. v0.2 makes knowledge portable and handles schema drift gracefully.
+When developers rotate projects, annotations shouldn't die with their access — and as schemas evolve, stale knowledge needs to be detected and retired. The lifecycle loop: **detect → deprecate → forget.**
 
 **New MCP tools**
-- `db_deprecate(table, connection, column=None, reason="")` — soft-delete: mark a table or column as deprecated. AI sees deprecation warnings on future calls.
-- `db_detect_drift(connection)` — compare annotations against current schema; surface orphaned annotations (column was annotated but no longer exists) and undocumented tables.
-
-**New CLI commands**
-- `amnesic export <connection> [--output file.json]` — dump all annotations + relationships as portable JSON
-- `amnesic import <connection> <file.json>` — bulk import (the receiving teammate's flow)
-- `amnesic remove <connection>` — drop from config, optionally delete knowledge file
-- `amnesic clear <connection>` — wipe knowledge for a connection, keep config entry
+- `db_deprecate(table, connection, column=None, reason="", undo=False)` — soft-retire: flag a table or column annotation as stale without deleting it. Surfaced as a warning in `db_get_schema` and `db_search`. Reversible.
+- `db_detect_drift(connection)` — audit annotations against the live schema; surface orphaned annotations (table/column no longer exists) and undocumented tables. Read-only.
+- `db_forget(table, connection, column=None, cascade=False)` — hard-delete an annotation. Safe by default; `cascade=True` also removes a table's columns + relationships. Permanent.
 
 **Store changes**
-- Backwards-compatible migration: add `deprecated_at` + `deprecated_reason` columns to `table_knowledge` and `column_knowledge`. Existing knowledge files auto-upgrade on first load.
+- Backwards-compatible migration: `deprecated_at` + `deprecated_reason` columns added to `table_knowledge` and `column_knowledge`. Existing knowledge files auto-upgrade on first load.
+
+**Coming next in the v0.2.x line**
+- `amnesic export` / `import` — portable knowledge JSON for team handoff (0.2.1)
+- `amnesic remove` / `clear` — connection cleanup (0.2.2)
+- Version-update notice on CLI commands (0.2.2)
 
 ---
 

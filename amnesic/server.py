@@ -54,6 +54,16 @@ Always call db_search or db_get_schema before querying an unfamiliar table.
 Always call db_annotate after discovering what an enum value or status code means.
 Once per database, run db_discover_relationships to populate the FK graph from the DB itself.
 
+Keeping knowledge accurate as the schema evolves:
+- db_detect_drift(connection) — audit saved annotations against the live schema;
+  surfaces orphaned annotations (the table/column no longer exists) and
+  undocumented tables. Run after schema changes.
+- db_deprecate(table, connection, column=...) — soft-retire an annotation that's
+  going stale but still exists; it stays but is flagged with a warning. Reversible.
+- db_forget(table, connection, column=...) — permanently delete a wrong annotation,
+  or clean up one db_detect_drift flagged as orphaned. cascade=True also removes a
+  table's columns + relationships.
+
 If db_list_connections() returns an empty list, the user has not yet configured any
 database connections. Do NOT try to configure them yourself. Instead, tell the user
 to run one of these commands in their terminal:
