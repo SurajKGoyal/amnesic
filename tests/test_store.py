@@ -7,11 +7,13 @@ No real DB connection required.
 
 import json
 import os
+import sqlite3
 import stat
 from pathlib import Path
 
 import pytest
 
+from amnesic._paths import knowledge_path
 from amnesic.store import KnowledgeStore
 
 
@@ -370,3 +372,95 @@ class TestSecureFilePermissions:
         assert db_file.exists(), "knowledge db was not created"
         mode = stat.S_IMODE(os.stat(db_file).st_mode)
         assert mode == 0o600, f"Expected 0o600, got {oct(mode)}"
+
+
+# ---------------------------------------------------------------------------
+# v0.2 deprecation-column migration
+# ---------------------------------------------------------------------------
+
+class TestDeprecationMigration:
+    """The v0.2 store adds deprecated_at + deprecated_reason to the knowledge
+    tables. Fresh stores get them via CREATE; pre-v0.2 stores get them via an
+    idempotent ALTER migration on first open, with no data loss."""
+
+    @staticmethod
+    def _write_pre_v02_db(path: Path) -> None:
+        """Create a pre-v0.2 knowledge DB (no deprecation columns) with data."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(path))
+        conn.execute(
+            "CREATE TABLE table_knowledge ("
+            "table_fqn TEXT PRIMARY KEY, description TEXT DEFAULT '', "
+            "aliases TEXT DEFAULT '[]')"
+        )
+        conn.execute(
+            "CREATE TABLE column_knowledge ("
+            "table_fqn TEXT NOT NULL, column_name TEXT NOT NULL, "
+            "description TEXT DEFAULT '', enum_values TEXT DEFAULT '{}', "
+            "foreign_key TEXT DEFAULT '', example_values TEXT DEFAULT '[]', "
+            "PRIMARY KEY (table_fqn, column_name))"
+        )
+        conn.execute(
+            "INSERT INTO table_knowledge (table_fqn, description, aliases) "
+            "VALUES ('dbo.orders', 'Order records', '[\"sales\"]')"
+        )
+        conn.execute(
+            "INSERT INTO column_knowledge (table_fqn, column_name, description) "
+            "VALUES ('dbo.orders', 'status', 'Order status')"
+        )
+        conn.commit()
+        conn.close()
+
+    def test_fresh_store_has_deprecation_columns(self, store):
+        for table in ("table_knowledge", "column_knowledge"):
+            cols = {
+                r["name"]
+                for r in store._conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            assert "deprecated_at" in cols, f"{table} missing deprecated_at"
+            assert "deprecated_reason" in cols, f"{table} missing deprecated_reason"
+
+    def test_migration_adds_columns_and_preserves_data(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AMNESIC_HOME", str(tmp_path))
+        db_path = knowledge_path("test_conn")
+        self._write_pre_v02_db(db_path)
+
+        store = KnowledgeStore("test_conn")  # opening triggers the migration
+
+        # Columns were added to both knowledge tables.
+        for table in ("table_knowledge", "column_knowledge"):
+            cols = {
+                r["name"]
+                for r in store._conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            assert "deprecated_at" in cols
+            assert "deprecated_reason" in cols
+
+        # Pre-existing data is intact.
+        tk = store.get_table_knowledge("dbo.orders")
+        assert tk["description"] == "Order records"
+        assert tk["aliases"] == ["sales"]
+        ck = store.get_column_knowledge("dbo.orders", "status")
+        assert ck["description"] == "Order status"
+
+        # New columns default to "not deprecated".
+        row = store._conn.execute(
+            "SELECT deprecated_at FROM table_knowledge WHERE table_fqn='dbo.orders'"
+        ).fetchone()
+        assert row["deprecated_at"] is None
+        store.close()
+
+    def test_migration_is_idempotent(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AMNESIC_HOME", str(tmp_path))
+        s1 = KnowledgeStore("test_conn")
+        s1.save_table_knowledge("dbo.orders", description="Orders")
+        s1.close()
+        # Second open must not error and must keep the columns + data.
+        s2 = KnowledgeStore("test_conn")
+        cols = {
+            r["name"]
+            for r in s2._conn.execute("PRAGMA table_info(table_knowledge)").fetchall()
+        }
+        assert "deprecated_at" in cols
+        assert s2.get_table_knowledge("dbo.orders")["description"] == "Orders"
+        s2.close()

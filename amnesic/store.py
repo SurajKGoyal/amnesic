@@ -34,23 +34,36 @@ CREATE TABLE IF NOT EXISTS schema_cache (
 
 _CREATE_TABLE_KNOWLEDGE = """
 CREATE TABLE IF NOT EXISTS table_knowledge (
-    table_fqn   TEXT PRIMARY KEY,
-    description TEXT DEFAULT '',
-    aliases     TEXT DEFAULT '[]'
+    table_fqn         TEXT PRIMARY KEY,
+    description       TEXT DEFAULT '',
+    aliases           TEXT DEFAULT '[]',
+    deprecated_at     TEXT,
+    deprecated_reason TEXT DEFAULT ''
 );
 """
 
 _CREATE_COLUMN_KNOWLEDGE = """
 CREATE TABLE IF NOT EXISTS column_knowledge (
-    table_fqn      TEXT NOT NULL,
-    column_name    TEXT NOT NULL,
-    description    TEXT DEFAULT '',
-    enum_values    TEXT DEFAULT '{}',
-    foreign_key    TEXT DEFAULT '',
-    example_values TEXT DEFAULT '[]',
+    table_fqn         TEXT NOT NULL,
+    column_name       TEXT NOT NULL,
+    description       TEXT DEFAULT '',
+    enum_values       TEXT DEFAULT '{}',
+    foreign_key       TEXT DEFAULT '',
+    example_values    TEXT DEFAULT '[]',
+    deprecated_at     TEXT,
+    deprecated_reason TEXT DEFAULT '',
     PRIMARY KEY (table_fqn, column_name)
 );
 """
+
+# v0.2 migration: knowledge tables created before v0.2 lack the deprecation
+# columns. CREATE TABLE IF NOT EXISTS won't alter an existing table, so add the
+# columns idempotently via ALTER. Table names are hardcoded literals (not user
+# input) — safe to interpolate.
+_DEPRECATION_COLUMNS = (
+    ("deprecated_at", "TEXT"),
+    ("deprecated_reason", "TEXT DEFAULT ''"),
+)
 
 _CREATE_TABLE_RELATIONSHIPS = """
 CREATE TABLE IF NOT EXISTS table_relationships (
@@ -143,6 +156,9 @@ class KnowledgeStore:
             self._conn.execute(_CREATE_KNOWLEDGE_FTS)
             # executescript handles multi-statement DDL (trigger definitions)
             self._conn.executescript(_CREATE_FTS_TRIGGERS)
+            # v0.2 migration: add deprecation columns to pre-v0.2 knowledge
+            # tables (idempotent — skipped when the columns already exist).
+            self._migrate_deprecation_columns()
             # One-time migration: lowercase existing column_name values so future
             # lookups (which always lowercase) match annotations saved before
             # the v0.1.11 case-insensitivity fix.
@@ -206,6 +222,24 @@ class KnowledgeStore:
                 )
             """)
             self._conn.commit()
+
+    def _migrate_deprecation_columns(self) -> None:
+        """Idempotently add v0.2 deprecation columns to knowledge tables.
+
+        Assumes the caller holds self._lock. Reads PRAGMA table_info and only
+        ALTERs when a column is missing, so it's a no-op on v0.2+ stores and a
+        one-time upgrade on pre-v0.2 stores. No data is touched.
+        """
+        for table in ("table_knowledge", "column_knowledge"):
+            existing = {
+                row["name"]
+                for row in self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            for col_name, col_decl in _DEPRECATION_COLUMNS:
+                if col_name not in existing:
+                    self._conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {col_name} {col_decl}"
+                    )
 
     # ------------------------------------------------------------------
     # Schema cache
