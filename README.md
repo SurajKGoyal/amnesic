@@ -244,6 +244,25 @@ Add to `.vscode/mcp.json`:
 
 ---
 
+## Updating
+
+amnesic ships often. Upgrade with the same tool you installed it with:
+
+| Installed via | Upgrade command |
+|---|---|
+| `pipx` | `pipx upgrade amnesic` |
+| `uv tool` | `uv tool upgrade amnesic` |
+| `pip` | `pip install --upgrade amnesic` |
+| `uvx` (ephemeral, in your MCP config) | uvx caches builds — run `uv cache clean amnesic` to pull the newest |
+
+Then **restart your MCP client** (Claude Code, Cursor, …) so it relaunches the amnesic server and picks up any new tools.
+
+**Upgrading is safe — you won't lose annotations.** Your knowledge files auto-migrate to the new schema on first load; amnesic only ever *adds* columns, never drops your data.
+
+To check the installed version: `pipx list` (or `pip show amnesic`). Latest release: [PyPI](https://pypi.org/project/amnesic/) · [Releases](https://github.com/SurajKGoyal/amnesic/releases).
+
+---
+
 ## Tools
 
 | Tool | Description |
