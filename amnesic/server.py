@@ -13,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 
 from amnesic.tools.connections import db_list_connections as _db_list_connections
 from amnesic.tools.knowledge import db_annotate as _db_annotate
+from amnesic.tools.knowledge import db_deprecate as _db_deprecate
 from amnesic.tools.knowledge import db_sync_knowledge as _db_sync_knowledge
 from amnesic.tools.query import db_query as _db_query
 from amnesic.tools.relationships import db_discover_relationships as _db_discover_relationships
@@ -212,6 +213,38 @@ def db_annotate(
         enum_values=enum_values,
         foreign_key=foreign_key,
         example_values=example_values,
+    )
+
+
+@mcp.tool()
+def db_deprecate(
+    table: str,
+    connection: str | None = None,
+    column: str | None = None,
+    reason: str = "",
+    undo: bool = False,
+) -> dict:
+    """
+    Soft-retire a table or column annotation — flag it stale without deleting it.
+
+    Use when a table/column still exists but should no longer be relied on. The
+    deprecation flag is surfaced in db_get_schema so the AI is warned off it on
+    future calls. Reversible via undo=True. To remove an annotation entirely
+    (e.g. the column was dropped from the DB), use db_forget instead.
+
+    Args:
+        table:      Table name, optionally schema-qualified (e.g. "users",
+                    "public.users", "dbo.Orders", "mydb.orders").
+        connection: Connection name. Defaults to first defined.
+        column:     Column to deprecate. Omit to deprecate the whole table.
+        reason:     Why it's deprecated (e.g. "replaced by status_v2").
+        undo:       Clear the deprecation flag instead of setting it.
+
+    Returns:
+        {table, connection, column, target, deprecated, reason}
+    """
+    return _db_deprecate(
+        table=table, connection=connection, column=column, reason=reason, undo=undo
     )
 
 

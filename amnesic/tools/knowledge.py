@@ -93,6 +93,57 @@ def db_annotate(
     }
 
 
+def db_deprecate(
+    table: str,
+    connection: str | None = None,
+    column: str | None = None,
+    reason: str = "",
+    undo: bool = False,
+) -> dict:
+    """
+    Soft-retire a table or column annotation — flag it stale without deleting it.
+
+    Use when a table/column still exists but should no longer be relied on (e.g.
+    a column being phased out, or an annotation superseded by a newer one). The
+    deprecation flag is surfaced in db_get_schema so the AI is warned off it on
+    future calls. Reversible — pass undo=True to clear the flag. To remove an
+    annotation entirely (e.g. the column was dropped), use db_forget instead.
+
+    Args:
+        table:      Table name, optionally schema-qualified to match your DB —
+                    e.g. "users", "public.users", "dbo.Orders", "mydb.orders".
+        connection: Connection name. Defaults to first defined.
+        column:     Column to deprecate. Omit to deprecate the whole table.
+        reason:     Human-readable reason (e.g. "replaced by status_v2"). Shown
+                    alongside the warning.
+        undo:       Clear the deprecation flag instead of setting it.
+
+    Returns:
+        {table, connection, target ("table"|"column"), deprecated (bool), reason}
+    """
+    connections = load_config()
+    conn_cfg = resolve_connection(connection, connections)
+    store = get_store(conn_cfg.name)
+    fqn, *_ = normalize_fqn(table, conn_cfg)
+
+    deprecated = not undo
+    if column is not None:
+        store.set_column_deprecated(fqn, column, deprecated=deprecated, reason=reason)
+        target = "column"
+    else:
+        store.set_table_deprecated(fqn, deprecated=deprecated, reason=reason)
+        target = "table"
+
+    return {
+        "table": fqn,
+        "connection": conn_cfg.name,
+        "column": column,
+        "target": target,
+        "deprecated": deprecated,
+        "reason": reason if deprecated else "",
+    }
+
+
 def db_sync_knowledge(
     from_connection: str,
     to_connection: str,

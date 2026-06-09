@@ -163,6 +163,10 @@ def _merge_knowledge_into_schema(
     store = get_store(conn_name)
     table_knowledge = store.get_table_knowledge(fqn)
     table_description = table_knowledge.get("description", "") if table_knowledge else ""
+    table_deprecated = bool(table_knowledge and table_knowledge.get("deprecated"))
+    table_deprecated_reason = (
+        table_knowledge.get("deprecated_reason", "") if table_knowledge else ""
+    )
 
     # Single query for all column annotations — keyed by lowercase column_name
     # to match the v0.1.11 convention (column_name is stored lowercase).
@@ -185,10 +189,16 @@ def _merge_knowledge_into_schema(
                 enriched_col["foreign_key"] = col_knowledge["foreign_key"]
             if col_knowledge.get("example_values"):
                 enriched_col["example_values"] = col_knowledge["example_values"]
+            # Surface deprecation so the AI is warned off a stale column.
+            if col_knowledge.get("deprecated"):
+                enriched_col["deprecated"] = True
+                enriched_col["deprecated_reason"] = col_knowledge.get("deprecated_reason", "")
         enriched.append(enriched_col)
 
     return {
         "table_description": table_description,
+        "table_deprecated": table_deprecated,
+        "table_deprecated_reason": table_deprecated_reason,
         "columns": enriched,
     }
 
@@ -240,6 +250,8 @@ def db_get_schema(
         "connection": conn_cfg.name,
         "columns": merged["columns"],
         "table_description": merged["table_description"],
+        "table_deprecated": merged["table_deprecated"],
+        "table_deprecated_reason": merged["table_deprecated_reason"],
         "cached": cached,
     }
 

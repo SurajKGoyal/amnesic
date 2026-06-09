@@ -129,3 +129,34 @@ class TestBatchColumnKnowledgeLookup:
         assert len(result["columns"]) == 2
         for col in result["columns"]:
             assert "description" not in col
+
+
+class TestDeprecationSurfacing:
+    """db_get_schema must surface deprecation so the AI is warned off stale items."""
+
+    def test_deprecated_column_flagged_in_merge(self, store, monkeypatch):
+        store.save_column_knowledge("dbo.orders", "legacy_status", description="old")
+        store.set_column_deprecated("dbo.orders", "legacy_status", deprecated=True, reason="use status_v2")
+        monkeypatch.setattr("amnesic.tools.schema.get_store", lambda _c: store)
+        from amnesic.tools.schema import _merge_knowledge_into_schema
+        columns = [{"column_name": "legacy_status", "data_type": "int"}]
+        result = _merge_knowledge_into_schema("dbo.orders", columns, "test_conn")
+        col = result["columns"][0]
+        assert col["deprecated"] is True
+        assert col["deprecated_reason"] == "use status_v2"
+
+    def test_non_deprecated_column_has_no_flag(self, store, monkeypatch):
+        store.save_column_knowledge("dbo.orders", "status", description="ok")
+        monkeypatch.setattr("amnesic.tools.schema.get_store", lambda _c: store)
+        from amnesic.tools.schema import _merge_knowledge_into_schema
+        columns = [{"column_name": "status", "data_type": "int"}]
+        result = _merge_knowledge_into_schema("dbo.orders", columns, "test_conn")
+        assert "deprecated" not in result["columns"][0]
+
+    def test_deprecated_table_flagged_in_merge(self, store, monkeypatch):
+        store.set_table_deprecated("dbo.orders", deprecated=True, reason="dropping Q3")
+        monkeypatch.setattr("amnesic.tools.schema.get_store", lambda _c: store)
+        from amnesic.tools.schema import _merge_knowledge_into_schema
+        result = _merge_knowledge_into_schema("dbo.orders", [], "test_conn")
+        assert result["table_deprecated"] is True
+        assert result["table_deprecated_reason"] == "dropping Q3"

@@ -293,7 +293,8 @@ class KnowledgeStore:
         key = table_fqn.lower().strip()
         with self._lock:
             cur = self._conn.execute(
-                "SELECT description, aliases FROM table_knowledge WHERE table_fqn = ?",
+                "SELECT description, aliases, deprecated_at, deprecated_reason "
+                "FROM table_knowledge WHERE table_fqn = ?",
                 (key,),
             )
             row = cur.fetchone()
@@ -302,7 +303,49 @@ class KnowledgeStore:
         return {
             "description": row["description"] or "",
             "aliases": json.loads(row["aliases"] or "[]"),
+            "deprecated": row["deprecated_at"] is not None,
+            "deprecated_at": row["deprecated_at"],
+            "deprecated_reason": row["deprecated_reason"] or "",
         }
+
+    def set_table_deprecated(
+        self, table_fqn: str, deprecated: bool = True, reason: str = ""
+    ) -> bool:
+        """Mark or unmark a table annotation as deprecated (soft, reversible).
+
+        Upserts a table_knowledge row if none exists (you can deprecate a table
+        that was cached but never annotated). Returns True if a row now carries
+        the requested state.
+        """
+        key = table_fqn.lower().strip()
+        with self._lock:
+            existing = self._conn.execute(
+                "SELECT 1 FROM table_knowledge WHERE table_fqn = ?", (key,)
+            ).fetchone()
+            if deprecated:
+                if existing:
+                    self._conn.execute(
+                        "UPDATE table_knowledge SET deprecated_at = datetime('now'), "
+                        "deprecated_reason = ? WHERE table_fqn = ?",
+                        (reason, key),
+                    )
+                else:
+                    self._conn.execute(
+                        "INSERT INTO table_knowledge "
+                        "(table_fqn, description, aliases, deprecated_at, deprecated_reason) "
+                        "VALUES (?, '', '[]', datetime('now'), ?)",
+                        (key, reason),
+                    )
+            else:
+                # Undo — only meaningful if a row exists.
+                if existing:
+                    self._conn.execute(
+                        "UPDATE table_knowledge SET deprecated_at = NULL, "
+                        "deprecated_reason = '' WHERE table_fqn = ?",
+                        (key,),
+                    )
+            self._conn.commit()
+        return bool(existing) or deprecated
 
     def save_table_knowledge(
         self,
@@ -346,7 +389,8 @@ class KnowledgeStore:
         col_key = column_name.lower().strip()
         with self._lock:
             cur = self._conn.execute(
-                "SELECT description, enum_values, foreign_key, example_values "
+                "SELECT description, enum_values, foreign_key, example_values, "
+                "deprecated_at, deprecated_reason "
                 "FROM column_knowledge WHERE table_fqn = ? AND column_name = ?",
                 (key, col_key),
             )
@@ -358,7 +402,51 @@ class KnowledgeStore:
             "enum_values": json.loads(row["enum_values"] or "{}"),
             "foreign_key": row["foreign_key"] or "",
             "example_values": json.loads(row["example_values"] or "[]"),
+            "deprecated": row["deprecated_at"] is not None,
+            "deprecated_at": row["deprecated_at"],
+            "deprecated_reason": row["deprecated_reason"] or "",
         }
+
+    def set_column_deprecated(
+        self, table_fqn: str, column_name: str,
+        deprecated: bool = True, reason: str = "",
+    ) -> bool:
+        """Mark or unmark a column annotation as deprecated (soft, reversible).
+
+        Upserts a column_knowledge row if none exists. Returns True if a row now
+        carries the requested state.
+        """
+        key = table_fqn.lower().strip()
+        col_key = column_name.lower().strip()
+        with self._lock:
+            existing = self._conn.execute(
+                "SELECT 1 FROM column_knowledge WHERE table_fqn = ? AND column_name = ?",
+                (key, col_key),
+            ).fetchone()
+            if deprecated:
+                if existing:
+                    self._conn.execute(
+                        "UPDATE column_knowledge SET deprecated_at = datetime('now'), "
+                        "deprecated_reason = ? WHERE table_fqn = ? AND column_name = ?",
+                        (reason, key, col_key),
+                    )
+                else:
+                    self._conn.execute(
+                        "INSERT INTO column_knowledge "
+                        "(table_fqn, column_name, description, enum_values, foreign_key, "
+                        "example_values, deprecated_at, deprecated_reason) "
+                        "VALUES (?, ?, '', '{}', '', '[]', datetime('now'), ?)",
+                        (key, col_key, reason),
+                    )
+            else:
+                if existing:
+                    self._conn.execute(
+                        "UPDATE column_knowledge SET deprecated_at = NULL, "
+                        "deprecated_reason = '' WHERE table_fqn = ? AND column_name = ?",
+                        (key, col_key),
+                    )
+            self._conn.commit()
+        return bool(existing) or deprecated
 
     def save_column_knowledge(
         self,
@@ -609,7 +697,8 @@ class KnowledgeStore:
         key = table_fqn.lower().strip()
         with self._lock:
             cur = self._conn.execute(
-                "SELECT column_name, description, enum_values, foreign_key, example_values "
+                "SELECT column_name, description, enum_values, foreign_key, example_values, "
+                "deprecated_at, deprecated_reason "
                 "FROM column_knowledge WHERE table_fqn = ?",
                 (key,),
             )
@@ -622,6 +711,9 @@ class KnowledgeStore:
                 "enum_values": json.loads(row["enum_values"] or "{}"),
                 "foreign_key": row["foreign_key"] or "",
                 "example_values": json.loads(row["example_values"] or "[]"),
+                "deprecated": row["deprecated_at"] is not None,
+                "deprecated_at": row["deprecated_at"],
+                "deprecated_reason": row["deprecated_reason"] or "",
             })
         return result
 
@@ -692,15 +784,42 @@ class KnowledgeStore:
                 # and FTS5-version-specific edge cases like "unknown special query".
                 return []
 
+            # Load deprecation status once (two small queries, not N+1) so search
+            # results can warn the AI off stale tables/columns — same signal as
+            # db_get_schema surfaces.
+            dep_tables = {
+                row["table_fqn"]: (row["deprecated_reason"] or "")
+                for row in self._conn.execute(
+                    "SELECT table_fqn, deprecated_reason FROM table_knowledge "
+                    "WHERE deprecated_at IS NOT NULL"
+                ).fetchall()
+            }
+            dep_cols = {
+                (row["table_fqn"], row["column_name"]): (row["deprecated_reason"] or "")
+                for row in self._conn.execute(
+                    "SELECT table_fqn, column_name, deprecated_reason FROM column_knowledge "
+                    "WHERE deprecated_at IS NOT NULL"
+                ).fetchall()
+            }
+
         results = []
         for r in rows:
+            target_type = r["target_type"]
+            table_fqn = r["table_fqn"]
+            column_name = r["column_name"] if r["column_name"] else None
+            if target_type == "table":
+                reason = dep_tables.get(table_fqn)
+            else:
+                reason = dep_cols.get((table_fqn, r["column_name"]))
             results.append({
-                "target_type": r["target_type"],
-                "table_fqn": r["table_fqn"],
-                "column_name": r["column_name"] if r["column_name"] else None,
+                "target_type": target_type,
+                "table_fqn": table_fqn,
+                "column_name": column_name,
                 "description": r["description"] or "",
                 "snippet": r["snippet"] or "",
                 "score": float(r["score"]),
+                "deprecated": reason is not None,
+                "deprecated_reason": reason or "",
             })
         return results
 

@@ -464,3 +464,71 @@ class TestDeprecationMigration:
         assert "deprecated_at" in cols
         assert s2.get_table_knowledge("dbo.orders")["description"] == "Orders"
         s2.close()
+
+
+# ---------------------------------------------------------------------------
+# v0.2 deprecation (db_deprecate backing)
+# ---------------------------------------------------------------------------
+
+class TestDeprecation:
+    def test_table_not_deprecated_by_default(self, store):
+        store.save_table_knowledge("dbo.orders", description="Orders")
+        tk = store.get_table_knowledge("dbo.orders")
+        assert tk["deprecated"] is False
+        assert tk["deprecated_reason"] == ""
+
+    def test_deprecate_table_sets_flag_and_reason(self, store):
+        store.save_table_knowledge("dbo.orders", description="Orders")
+        store.set_table_deprecated("dbo.orders", deprecated=True, reason="legacy")
+        tk = store.get_table_knowledge("dbo.orders")
+        assert tk["deprecated"] is True
+        assert tk["deprecated_reason"] == "legacy"
+        assert tk["deprecated_at"] is not None
+        # Description is preserved.
+        assert tk["description"] == "Orders"
+
+    def test_deprecate_table_without_prior_annotation_creates_row(self, store):
+        store.set_table_deprecated("dbo.ghost", deprecated=True, reason="gone soon")
+        tk = store.get_table_knowledge("dbo.ghost")
+        assert tk is not None
+        assert tk["deprecated"] is True
+
+    def test_undo_table_deprecation_clears_flag(self, store):
+        store.set_table_deprecated("dbo.orders", deprecated=True, reason="legacy")
+        store.set_table_deprecated("dbo.orders", deprecated=False)
+        tk = store.get_table_knowledge("dbo.orders")
+        assert tk["deprecated"] is False
+        assert tk["deprecated_reason"] == ""
+
+    def test_deprecate_column_sets_flag(self, store):
+        store.save_column_knowledge("dbo.orders", "status", description="status code")
+        store.set_column_deprecated("dbo.orders", "status", deprecated=True, reason="use status_v2")
+        ck = store.get_column_knowledge("dbo.orders", "status")
+        assert ck["deprecated"] is True
+        assert ck["deprecated_reason"] == "use status_v2"
+        assert ck["description"] == "status code"
+
+    def test_undo_column_deprecation(self, store):
+        store.set_column_deprecated("dbo.orders", "status", deprecated=True, reason="x")
+        store.set_column_deprecated("dbo.orders", "status", deprecated=False)
+        ck = store.get_column_knowledge("dbo.orders", "status")
+        assert ck["deprecated"] is False
+
+    def test_deprecation_surfaces_in_get_all_column_knowledge(self, store):
+        store.save_column_knowledge("dbo.orders", "status", description="s")
+        store.set_column_deprecated("dbo.orders", "status", deprecated=True, reason="r")
+        rows = {c["column_name"]: c for c in store.get_all_column_knowledge("dbo.orders")}
+        assert rows["status"]["deprecated"] is True
+        assert rows["status"]["deprecated_reason"] == "r"
+
+    def test_deprecation_surfaces_in_search(self, store):
+        store.save_table_knowledge("dbo.orders", description="customer payment orders")
+        store.set_table_deprecated("dbo.orders", deprecated=True, reason="legacy")
+        results = {r["table_fqn"]: r for r in store.search("payment", target="tables")}
+        assert results["dbo.orders"]["deprecated"] is True
+        assert results["dbo.orders"]["deprecated_reason"] == "legacy"
+
+    def test_non_deprecated_search_result_flag_false(self, store):
+        store.save_table_knowledge("dbo.invoices", description="billing invoices")
+        results = {r["table_fqn"]: r for r in store.search("billing", target="tables")}
+        assert results["dbo.invoices"]["deprecated"] is False
