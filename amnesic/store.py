@@ -692,6 +692,12 @@ class KnowledgeStore:
             )
             return [r["table_fqn"] for r in cur.fetchall()]
 
+    def get_all_table_knowledge_fqns(self) -> list[str]:
+        """Return all table FQNs that have a table_knowledge row (annotated)."""
+        with self._lock:
+            cur = self._conn.execute("SELECT table_fqn FROM table_knowledge")
+            return [r["table_fqn"] for r in cur.fetchall()]
+
     def get_all_column_knowledge(self, table_fqn: str) -> list[dict[str, Any]]:
         """Return all column knowledge rows for a table."""
         key = table_fqn.lower().strip()

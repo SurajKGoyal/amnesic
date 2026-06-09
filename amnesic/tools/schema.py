@@ -150,6 +150,54 @@ def _fetch_schema_from_db(
         ]
 
 
+def fetch_all_table_fqns_from_db(conn_cfg: ConnectionConfig) -> set[str]:
+    """Return the canonical FQNs of every base table in the live database.
+
+    FQNs match normalize_fqn's output exactly (lowercased, driver-specific
+    shape) so they can be compared directly against the knowledge store's keys.
+    Used by db_detect_drift. Read-only.
+    """
+    engine = get_engine(conn_cfg)
+    driver = conn_cfg.driver.lower()
+    db = conn_cfg.database
+
+    with engine.connect() as conn_db:
+        if driver == "sqlite":
+            result = conn_db.execute(text(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ))
+            return {row[0].lower() for row in result.fetchall()}
+
+        if driver == "mssql":
+            validate_identifier(db, "database")
+            result = conn_db.execute(text(
+                f"SELECT TABLE_SCHEMA, TABLE_NAME FROM [{db}].INFORMATION_SCHEMA.TABLES "
+                f"WHERE TABLE_TYPE = 'BASE TABLE'"
+            ))
+            return {f"{db}.{r[0]}.{r[1]}".lower() for r in result.fetchall()}
+
+        if driver in ("postgres", "postgresql"):
+            result = conn_db.execute(text(
+                "SELECT table_schema, table_name FROM information_schema.tables "
+                "WHERE table_type = 'BASE TABLE' "
+                "AND table_schema NOT IN ('pg_catalog', 'information_schema')"
+            ))
+            return {f"{r[0]}.{r[1]}".lower() for r in result.fetchall()}
+
+        if driver == "mysql":
+            result = conn_db.execute(
+                text(
+                    "SELECT TABLE_NAME FROM information_schema.tables "
+                    "WHERE TABLE_SCHEMA = :db AND TABLE_TYPE = 'BASE TABLE'"
+                ),
+                {"db": db},
+            )
+            return {f"{db}.{r[0]}".lower() for r in result.fetchall()}
+
+        raise ValueError(f"Unsupported driver for table listing: {conn_cfg.driver}")
+
+
 def _merge_knowledge_into_schema(
     fqn: str,
     columns: list[dict],

@@ -12,6 +12,7 @@ Start with:
 from mcp.server.fastmcp import FastMCP
 
 from amnesic.tools.connections import db_list_connections as _db_list_connections
+from amnesic.tools.drift import db_detect_drift as _db_detect_drift
 from amnesic.tools.knowledge import db_annotate as _db_annotate
 from amnesic.tools.knowledge import db_deprecate as _db_deprecate
 from amnesic.tools.knowledge import db_sync_knowledge as _db_sync_knowledge
@@ -289,6 +290,28 @@ def db_list_connections() -> dict:
         {connections: [{name, driver, database, server}]}
     """
     return _db_list_connections()
+
+
+@mcp.tool()
+def db_detect_drift(connection: str | None = None) -> dict:
+    """
+    Audit saved annotations against the live database schema (read-only).
+
+    Surfaces drift after the schema evolves:
+      - orphaned annotations — a table or column you annotated that no longer
+        exists in the DB. Remove with db_forget, or db_deprecate if pending.
+      - undocumented tables — live tables with no annotation yet (coverage gaps).
+
+    Changes nothing — purely a report. Run after schema changes, or periodically.
+
+    Args:
+        connection: Connection name. Defaults to first defined.
+
+    Returns:
+        {connection, orphaned_tables, orphaned_columns, undocumented_tables,
+         undocumented_truncated, summary}
+    """
+    return _db_detect_drift(connection=connection)
 
 
 @mcp.tool()
