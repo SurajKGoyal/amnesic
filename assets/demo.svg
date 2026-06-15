@@ -1,0 +1,101 @@
+<svg viewBox="0 0 720 580" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif" role="img">
+  <title>amnesic — your AI agent calls amnesic's tools; amnesic remembers across sessions</title>
+  <desc>Architecture: You talk to an AI agent, the agent calls amnesic (an MCP server), amnesic queries your database and stores annotations. Session 1: you ask for orders where status = 3, the AI runs amnesic's db_query, then you tell it status 3 means cancelled and the AI calls amnesic's db_annotate to save it. Session 2, a fresh session, you ask for cancelled orders in plain language; the AI uses amnesic's saved knowledge to translate cancelled to status = 3 and returns the same rows.</desc>
+
+  <defs>
+    <style>
+      .frame { fill:#14161c; stroke:#2a2f3a; stroke-width:1.5; }
+      .bar   { fill:#1b1e26; }
+      .title { fill:#e6edf3; font-weight:700; }
+      .muted { fill:#8b949e; }
+      .label { fill:#b9a8f5; font-weight:700; letter-spacing:.04em; }
+      .ubub  { fill:#20242e; stroke:#2c313d; stroke-width:1; }
+      .abub  { fill:#1a1f2b; stroke:#2f3a4d; stroke-width:1; }
+      .utxt  { fill:#c9d1d9; }
+      .atxt  { fill:#cdd6e3; }
+      .ai    { fill:#58a6ff; font-weight:700; }
+      .tool  { fill:#b9a8f5; font-weight:700; }
+      .mono  { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .ok    { fill:#3fb950; font-weight:700; }
+      .hl    { fill:#ffd166; font-weight:700; }
+      .chip  { fill:#2a2150; stroke:#7d6ad9; stroke-width:1.5; }
+      .divtxt{ fill:#8b949e; letter-spacing:.06em; }
+      .tag   { fill:#e6edf3; font-weight:700; }
+      .accent{ fill:#b9a8f5; }
+      .reveal{ opacity:0; }
+    </style>
+  </defs>
+
+  <rect class="frame" x="8" y="8" width="704" height="564" rx="14"/>
+  <rect class="bar" x="8" y="8" width="704" height="40" rx="14"/>
+  <rect class="bar" x="8" y="30" width="704" height="18"/>
+  <circle cx="30" cy="28" r="5" fill="#ff5f57"/>
+  <circle cx="48" cy="28" r="5" fill="#febc2e"/>
+  <circle cx="66" cy="28" r="5" fill="#28c840"/>
+  <text x="360" y="32" text-anchor="middle" class="title" font-size="14">amnesic — SQL memory for your AI</text>
+
+  <!-- architecture chain — always visible context -->
+  <text x="360" y="70" text-anchor="middle" font-size="12.5">
+    <tspan class="muted" font-weight="700">You</tspan><tspan fill="#5a6270">   &#10231;   </tspan><tspan class="ai">AI agent</tspan><tspan fill="#5a6270">   &#10231;   </tspan><tspan class="tool">amnesic</tspan><tspan class="muted"> (MCP) </tspan><tspan fill="#5a6270">  &#10231;   </tspan><tspan class="ok">your DB</tspan>
+  </text>
+  <line x1="40" y1="84" x2="680" y2="84" stroke="#23272f" stroke-width="1"/>
+
+  <!-- SESSION 1 -->
+  <g class="reveal"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.03;0.05;0.93;1" dur="16s" repeatCount="indefinite"/>
+    <text x="32" y="104" class="label" font-size="12">&#9679; SESSION 1 &#183; MONDAY</text>
+  </g>
+
+  <g class="reveal"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.08;0.10;0.93;1" dur="16s" repeatCount="indefinite"/>
+    <rect class="ubub" x="32" y="114" width="588" height="34" rx="9"/>
+    <text x="48" y="136" class="utxt" font-size="14"><tspan class="muted" font-weight="700">You  </tspan>give me all orders where <tspan class="hl mono">status = 3</tspan></text>
+  </g>
+
+  <g class="reveal"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.155;0.175;0.93;1" dur="16s" repeatCount="indefinite"/>
+    <rect class="abub" x="80" y="156" width="540" height="34" rx="9"/>
+    <text x="96" y="178" class="atxt" font-size="13"><tspan class="ai">AI  </tspan><tspan class="tool mono">amnesic&#183;db_query</tspan>  orders WHERE status = 3  &#8594;  42 rows</text>
+  </g>
+
+  <g class="reveal"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.235;0.255;0.93;1" dur="16s" repeatCount="indefinite"/>
+    <rect class="ubub" x="32" y="198" width="588" height="34" rx="9"/>
+    <text x="48" y="220" class="utxt" font-size="14"><tspan class="muted" font-weight="700">You  </tspan>status 3 means a <tspan class="hl">cancelled order</tspan> &#8212; save it</text>
+  </g>
+
+  <g class="reveal"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.30;0.32;0.93;1" dur="16s" repeatCount="indefinite"/>
+    <rect class="abub" x="80" y="240" width="540" height="34" rx="9"/>
+    <text x="96" y="262" class="atxt" font-size="13"><tspan class="ai">AI  </tspan><tspan class="tool mono">amnesic&#183;db_annotate</tspan>  status: <tspan class="hl">3 &#8594; "cancelled"</tspan>  <tspan class="ok">&#10003;</tspan></text>
+  </g>
+
+  <g class="reveal"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.32;0.35;0.93;1" dur="16s" repeatCount="indefinite"/>
+    <rect class="chip" x="262" y="284" width="196" height="30" rx="15"/>
+    <text x="360" y="304" text-anchor="middle" class="accent" font-size="12" font-weight="700">&#128190; saved in amnesic's memory</text>
+  </g>
+
+  <!-- divider -->
+  <g class="reveal"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.40;0.42;0.93;1" dur="16s" repeatCount="indefinite"/>
+    <line x1="40" y1="334" x2="300" y2="334" stroke="#2a2f3a" stroke-width="1"/>
+    <line x1="420" y1="334" x2="680" y2="334" stroke="#2a2f3a" stroke-width="1"/>
+    <text x="360" y="338" text-anchor="middle" class="divtxt" font-size="11">NEW SESSION &#183; DAYS LATER</text>
+  </g>
+
+  <!-- SESSION 2 -->
+  <g class="reveal"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.44;0.46;0.93;1" dur="16s" repeatCount="indefinite"/>
+    <text x="32" y="368" class="label" font-size="12">&#9679; SESSION 2 &#183; THURSDAY  &#183;  <tspan fill="#8b949e">fresh start, nothing re-explained</tspan></text>
+  </g>
+
+  <g class="reveal"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.50;0.52;0.93;1" dur="16s" repeatCount="indefinite"/>
+    <rect class="ubub" x="32" y="380" width="588" height="34" rx="9"/>
+    <text x="48" y="402" class="utxt" font-size="14"><tspan class="muted" font-weight="700">You  </tspan>give me all <tspan class="hl">cancelled</tspan> orders</text>
+  </g>
+
+  <g class="reveal"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.585;0.605;0.93;1" dur="16s" repeatCount="indefinite"/>
+    <rect class="abub" x="80" y="422" width="540" height="58" rx="9"/>
+    <text x="96" y="444" class="atxt" font-size="13"><tspan class="ai">AI  </tspan><tspan class="tool mono">amnesic&#183;db_search</tspan>  &#8594;  <tspan class="hl">"cancelled" = status 3</tspan></text>
+    <text x="96" y="466" class="atxt" font-size="13"><tspan class="tool mono">amnesic&#183;db_query</tspan>  WHERE status = 3  &#8594;  <tspan class="ok">same 42 rows &#10003;</tspan></text>
+  </g>
+
+  <!-- tagline -->
+  <g class="reveal"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.70;0.73;0.93;1" dur="16s" repeatCount="indefinite"/>
+    <text x="360" y="518" text-anchor="middle" class="tag" font-size="16">Teach it once.  <tspan class="accent">Query in plain language forever.</tspan></text>
+    <text x="360" y="540" text-anchor="middle" class="muted" font-size="11.5">your AI carries the knowledge between sessions &#8212; via amnesic</text>
+  </g>
+</svg>

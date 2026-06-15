@@ -9,6 +9,10 @@
 
 *"The MCP server with the most ironic name in the registry. It's anything but amnesic — it remembers your database so your AI doesn't have to."*
 
+<p align="center">
+  <img src="assets/demo.svg" alt="Teach your AI a status code once, then query it in plain language forever. Your AI agent calls amnesic's tools; amnesic remembers across sessions." width="720">
+</p>
+
 **Works with** Claude Code · Claude Desktop · Cursor · VS Code · Cline · Windsurf — any [MCP-compatible client](https://modelcontextprotocol.io/clients).
 
 **Available on** [Official MCP Registry](https://registry.modelcontextprotocol.io) · [Claude Code plugin marketplace](https://github.com/SurajKGoyal/amnesic-marketplace)
