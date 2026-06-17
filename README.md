@@ -263,7 +263,7 @@ Then **restart your MCP client** (Claude Code, Cursor, …) so it relaunches the
 
 **Upgrading is safe — you won't lose annotations.** Your knowledge files auto-migrate to the new schema on first load; amnesic only ever *adds* columns, never drops your data.
 
-To check the installed version: `pipx list` (or `pip show amnesic`). Latest release: [PyPI](https://pypi.org/project/amnesic/) · [Releases](https://github.com/SurajKGoyal/amnesic/releases).
+To check the installed version: `amnesic --version`. Latest release: [PyPI](https://pypi.org/project/amnesic/) · [Releases](https://github.com/SurajKGoyal/amnesic/releases).
 
 ---
 
