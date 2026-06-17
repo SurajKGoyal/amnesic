@@ -8,7 +8,9 @@ URL-encodes user/password to handle special characters.
 Starts tunnel first if conn.tunnel_script is set.
 """
 
+import re
 import threading
+from contextlib import contextmanager
 from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine
@@ -19,6 +21,41 @@ from amnesic import tunnel
 
 _engine_cache: dict[str, Engine] = {}
 _engine_lock = threading.Lock()
+
+# Matches credentials in a connection URL: driver://user:pass@host
+_URL_CRED_RE = re.compile(r"(://[^:/@\s]+):[^@/\s]+@")
+
+
+def scrub_secrets(message: str, conn: ConnectionConfig) -> str:
+    """Mask connection credentials in a (usually error) string.
+
+    DB drivers and SQLAlchemy sometimes embed the connection URL — password
+    included — in exception messages. This replaces the literal password (and its
+    URL-encoded form), then masks any ``user:pass@`` left in a connection URL, so
+    secrets never leave amnesic in an error.
+    """
+    out = message
+    if conn.password:
+        out = out.replace(conn.password, "***")
+        encoded = quote_plus(conn.password)
+        if encoded != conn.password:
+            out = out.replace(encoded, "***")
+    return _URL_CRED_RE.sub(r"\1:***@", out)
+
+
+@contextmanager
+def safe_connect(engine: Engine, conn: ConnectionConfig):
+    """Open a DB connection, scrubbing credentials from ANY error it raises.
+
+    Catches failures during both connect and query execution, re-raising with
+    secrets masked. The original exception is deliberately NOT chained
+    (``from None``) so the password can't leak through the traceback either.
+    """
+    try:
+        with engine.connect() as conn_db:
+            yield conn_db
+    except Exception as exc:  # noqa: BLE001 — intentional: scrub anything before it escapes
+        raise RuntimeError(scrub_secrets(str(exc), conn)) from None
 
 _URL_TEMPLATES = {
     "postgres":   "postgresql+psycopg2://{user}:{password}@{server}:{port}/{database}",

@@ -11,7 +11,7 @@ join paths up to a given depth.
 from sqlalchemy import text
 
 from amnesic.config import ConnectionConfig, load_config, resolve_connection
-from amnesic.drivers import get_engine
+from amnesic.drivers import get_engine, safe_connect
 from amnesic.readonly import validate_identifier
 from amnesic.store import get_store
 from amnesic.tools.schema import normalize_fqn
@@ -69,7 +69,7 @@ def _discover_from_db(conn_cfg: ConnectionConfig) -> list[dict]:
     engine = get_engine(conn_cfg)
     driver = conn_cfg.driver.lower()
 
-    with engine.connect() as conn_db:
+    with safe_connect(engine, conn_cfg) as conn_db:
         if driver == "mssql":
             result = conn_db.execute(_MSSQL_FK_SQL)
             rows = result.fetchall()

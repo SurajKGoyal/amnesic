@@ -9,7 +9,7 @@ Schema results are cached in the KnowledgeStore and enriched with annotations.
 from sqlalchemy import text
 
 from amnesic.config import ConnectionConfig, load_config, resolve_connection
-from amnesic.drivers import get_engine
+from amnesic.drivers import get_engine, safe_connect
 from amnesic.readonly import validate_identifier
 from amnesic.store import get_store
 
@@ -90,7 +90,7 @@ def _fetch_schema_from_db(
     if schema:
         validate_identifier(schema, "schema")
 
-    with engine.connect() as conn_db:
+    with safe_connect(engine, conn_cfg) as conn_db:
         if driver == "sqlite":
             # PRAGMA doesn't support parameterized table names — identifier validated above
             result = conn_db.execute(text(f"PRAGMA table_info({table_name})"))
@@ -161,7 +161,7 @@ def fetch_all_table_fqns_from_db(conn_cfg: ConnectionConfig) -> set[str]:
     driver = conn_cfg.driver.lower()
     db = conn_cfg.database
 
-    with engine.connect() as conn_db:
+    with safe_connect(engine, conn_cfg) as conn_db:
         if driver == "sqlite":
             result = conn_db.execute(text(
                 "SELECT name FROM sqlite_master "

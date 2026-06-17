@@ -5,7 +5,7 @@ db_query — execute a read-only SQL query against a named connection.
 from sqlalchemy import text
 
 from amnesic.config import load_config, resolve_connection
-from amnesic.drivers import get_engine
+from amnesic.drivers import get_engine, safe_connect
 from amnesic.readonly import assert_readonly
 
 
@@ -38,7 +38,7 @@ def db_query(
     conn_cfg = resolve_connection(connection, connections)
     engine = get_engine(conn_cfg)
 
-    with engine.connect() as conn_db:
+    with safe_connect(engine, conn_cfg) as conn_db:
         trans = conn_db.begin()
         try:
             result = conn_db.execute(text(sql))
