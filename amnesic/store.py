@@ -881,6 +881,174 @@ class KnowledgeStore:
             })
         return results
 
+    # ------------------------------------------------------------------
+    # Export / import / clear  (portable knowledge — team handoff)
+    # ------------------------------------------------------------------
+
+    def export_knowledge(self) -> dict[str, Any]:
+        """Dump all annotations + relationships for a full-fidelity handoff.
+
+        Excludes schema_cache (re-derivable via db_get_schema). Preserves
+        deprecation flags so a round-trip is lossless. enum_values /
+        example_values / aliases are kept as raw JSON strings — import writes
+        them back verbatim, so no parse/re-serialize drift.
+        """
+        with self._lock:
+            tables = [
+                {
+                    "table_fqn": r["table_fqn"],
+                    "description": r["description"] or "",
+                    "aliases": r["aliases"] or "[]",
+                    "deprecated_at": r["deprecated_at"],
+                    "deprecated_reason": r["deprecated_reason"] or "",
+                }
+                for r in self._conn.execute(
+                    "SELECT table_fqn, description, aliases, deprecated_at, "
+                    "deprecated_reason FROM table_knowledge ORDER BY table_fqn"
+                ).fetchall()
+            ]
+            columns = [
+                {
+                    "table_fqn": r["table_fqn"],
+                    "column_name": r["column_name"],
+                    "description": r["description"] or "",
+                    "enum_values": r["enum_values"] or "{}",
+                    "foreign_key": r["foreign_key"] or "",
+                    "example_values": r["example_values"] or "[]",
+                    "deprecated_at": r["deprecated_at"],
+                    "deprecated_reason": r["deprecated_reason"] or "",
+                }
+                for r in self._conn.execute(
+                    "SELECT table_fqn, column_name, description, enum_values, "
+                    "foreign_key, example_values, deprecated_at, deprecated_reason "
+                    "FROM column_knowledge ORDER BY table_fqn, column_name"
+                ).fetchall()
+            ]
+            relationships = [
+                dict(r)
+                for r in self._conn.execute(
+                    "SELECT from_table, from_column, to_table, to_column, "
+                    "relationship_type, cardinality, source, notes "
+                    "FROM table_relationships "
+                    "ORDER BY from_table, from_column, to_table, to_column"
+                ).fetchall()
+            ]
+        return {"tables": tables, "columns": columns, "relationships": relationships}
+
+    def import_knowledge(self, data: dict[str, Any]) -> dict[str, int]:
+        """Upsert annotations + relationships from an export() payload.
+
+        Unconditional INSERT OR REPLACE — a handoff loads everything. The
+        DELETE+INSERT semantics of REPLACE fire the FTS delete+insert triggers,
+        so the search index stays consistent. Returns counts of rows written.
+        """
+        tables = data.get("tables", []) or []
+        columns = data.get("columns", []) or []
+        relationships = data.get("relationships", []) or []
+
+        table_params = [
+            (
+                t["table_fqn"].lower().strip(),
+                t.get("description", "") or "",
+                t.get("aliases", "[]") or "[]",
+                t.get("deprecated_at"),
+                t.get("deprecated_reason", "") or "",
+            )
+            for t in tables
+        ]
+        column_params = [
+            (
+                c["table_fqn"].lower().strip(),
+                c["column_name"].lower().strip(),
+                c.get("description", "") or "",
+                c.get("enum_values", "{}") or "{}",
+                c.get("foreign_key", "") or "",
+                c.get("example_values", "[]") or "[]",
+                c.get("deprecated_at"),
+                c.get("deprecated_reason", "") or "",
+            )
+            for c in columns
+        ]
+        rel_params = [
+            (
+                r["from_table"].lower().strip(),
+                r.get("from_column", ""),
+                r["to_table"].lower().strip(),
+                r.get("to_column", ""),
+                r.get("relationship_type", "fk"),
+                r.get("cardinality", "many_to_one"),
+                r.get("source", "manual"),
+                r.get("notes", ""),
+            )
+            for r in relationships
+        ]
+
+        with self._lock:
+            try:
+                if table_params:
+                    self._conn.executemany(
+                        "INSERT OR REPLACE INTO table_knowledge "
+                        "(table_fqn, description, aliases, deprecated_at, deprecated_reason) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        table_params,
+                    )
+                if column_params:
+                    self._conn.executemany(
+                        "INSERT OR REPLACE INTO column_knowledge "
+                        "(table_fqn, column_name, description, enum_values, foreign_key, "
+                        "example_values, deprecated_at, deprecated_reason) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        column_params,
+                    )
+                if rel_params:
+                    self._conn.executemany(
+                        "INSERT OR REPLACE INTO table_relationships "
+                        "(from_table, from_column, to_table, to_column, relationship_type, "
+                        "cardinality, source, notes) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        rel_params,
+                    )
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+
+        return {
+            "tables": len(table_params),
+            "columns": len(column_params),
+            "relationships": len(rel_params),
+        }
+
+    def clear_knowledge(self) -> dict[str, int]:
+        """Wipe every knowledge row for this connection (schema cache included).
+
+        Annotations, relationships, and the cached schema are all removed; the
+        SQLite file itself is kept so the store keeps working. FTS is emptied
+        via the table_knowledge / column_knowledge delete triggers. Returns
+        counts of what was removed.
+        """
+        with self._lock:
+            tk = self._conn.execute("SELECT COUNT(*) FROM table_knowledge").fetchone()[0]
+            ck = self._conn.execute("SELECT COUNT(*) FROM column_knowledge").fetchone()[0]
+            rel = self._conn.execute("SELECT COUNT(*) FROM table_relationships").fetchone()[0]
+            sc = self._conn.execute("SELECT COUNT(*) FROM schema_cache").fetchone()[0]
+            try:
+                # Order matters only for clarity — triggers keep FTS in lockstep.
+                self._conn.execute("DELETE FROM column_knowledge")
+                self._conn.execute("DELETE FROM table_knowledge")
+                self._conn.execute("DELETE FROM table_relationships")
+                self._conn.execute("DELETE FROM schema_cache")
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+        return {
+            "tables": tk,
+            "columns": ck,
+            "relationships": rel,
+            "schema_cache": sc,
+        }
+
     def close(self) -> None:
         """Close the SQLite connection."""
         with self._lock:
@@ -898,3 +1066,15 @@ def get_store(conn_name: str) -> KnowledgeStore:
         if conn_name not in _store_cache:
             _store_cache[conn_name] = KnowledgeStore(conn_name)
         return _store_cache[conn_name]
+
+
+def close_store(conn_name: str) -> None:
+    """Close and evict a cached store so its SQLite file can be deleted/replaced.
+
+    No-op if the connection was never opened. Used by `amnesic remove
+    --delete-knowledge` before unlinking the knowledge file.
+    """
+    with _store_cache_lock:
+        store = _store_cache.pop(conn_name, None)
+    if store is not None:
+        store.close()

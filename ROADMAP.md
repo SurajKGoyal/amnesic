@@ -41,10 +41,21 @@ When developers rotate projects, annotations shouldn't die with their access —
 **Store changes**
 - Backwards-compatible migration: `deprecated_at` + `deprecated_reason` columns added to `table_knowledge` and `column_knowledge`. Existing knowledge files auto-upgrade on first load.
 
-**Coming next in the v0.2.x line**
-- `amnesic export` / `import` — portable knowledge JSON for team handoff (0.2.1)
-- `amnesic remove` / `clear` — connection cleanup (0.2.2)
-- Version-update notice on CLI commands (0.2.2)
+---
+
+## v0.2.2 — Portable Knowledge & Connection DX ✅ *Shipped*
+
+Round out the lifecycle line with CLI tooling for moving knowledge between machines, cleaning up connections, and a few DX niceties.
+
+**New CLI commands**
+- `amnesic export <conn> [-o file]` / `amnesic import <conn> <file>` — portable knowledge JSON (annotations + relationships, not the re-derivable schema cache) for team handoff or staging→prod promotion. Lossless round-trip incl. deprecation flags; `format_version` guard rejects unknown payloads.
+- `amnesic remove <conn> [--delete-knowledge]` — drop a connection from `connections.toml` with surgical string edits (every other block kept byte-for-byte). Knowledge file kept unless asked.
+- `amnesic clear <conn>` — wipe stored knowledge but keep the config entry.
+
+**DX**
+- `amnesic init` now writes a commented `.env.example` next to `connections.toml` (closes #5).
+- One-line "a newer amnesic is on PyPI" notice on CLI commands — 24h cached, opt-out via `AMNESIC_NO_UPDATE_CHECK`, fail-silent, and **never** runs in MCP-server mode.
+- Local commands (`export`/`import`/`clear`/`remove`) resolve connections by name only — a broken sibling connection's missing secret can't block them.
 
 ---
 

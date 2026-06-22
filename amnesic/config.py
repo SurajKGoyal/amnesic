@@ -272,6 +272,51 @@ def invalidate_config_cache() -> None:
         _config_cache_path = None
 
 
+def _collect_connection_names(data: dict, prefix: str = "") -> list[str]:
+    """Walk the [connections] table and return canonical names — no expansion."""
+    names: list[str] = []
+    for key, section in data.items():
+        if not isinstance(section, dict):
+            continue
+        full_name = f"{prefix}.{key}" if prefix else key
+        if _is_leaf_connection(section):
+            names.append(full_name)
+        else:
+            names.extend(_collect_connection_names(section, prefix=full_name))
+    return names
+
+
+def list_connection_names(path: str | Path | None = None) -> list[str]:
+    """Return canonical connection names WITHOUT expanding ${VAR} credentials.
+
+    Local-only commands (export/import/clear) need a connection to *exist*, not
+    to be connectable — so a missing secret on an unrelated connection must not
+    block them. This reads only the TOML structure; it never touches the
+    environment. Raises ConfigError only for a missing/unparseable file.
+    """
+    if path is None:
+        env_path_str = os.environ.get("AMNESIC_CONFIG")
+        resolved_path = Path(env_path_str) if env_path_str else _amnesic_connections_path()
+    else:
+        resolved_path = Path(path)
+
+    if not resolved_path.exists():
+        raise ConfigError(
+            f"Config file not found: {resolved_path}\n"
+            f"Run 'amnesic init' to create a template."
+        )
+    try:
+        with open(resolved_path, "rb") as fh:
+            raw = tomllib.load(fh)
+    except Exception as exc:
+        raise ConfigError(f"Failed to parse config at {resolved_path}: {exc}") from exc
+
+    connections_raw = raw.get("connections", {})
+    if not isinstance(connections_raw, dict):
+        raise ConfigError("Config must have a [connections] section.")
+    return _collect_connection_names(connections_raw)
+
+
 def get_default_connection_name(connections: dict[str, ConnectionConfig]) -> str:
     """Return the first defined connection name."""
     if not connections:

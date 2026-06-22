@@ -126,6 +126,31 @@ To see the exact name your config uses, check `~/.config/amnesic/connections.tom
 
 **Under the hood**: writes (or replaces) the line in `~/.config/amnesic/.env`, sets file permission to `chmod 600` (only your user can read it), preserves all other entries.
 
+### Managing connections and knowledge
+
+Knowledge accumulates per connection in a local SQLite file. These commands let you move it between machines and clean up:
+
+```bash
+# Hand off everything you've taught amnesic about a database (annotations +
+# relationships, not the re-derivable schema cache) as portable JSON:
+amnesic export orders.prod -o orders-knowledge.json
+amnesic export orders.prod            # or print to stdout to pipe/redirect
+
+# Load that knowledge into another connection (e.g. promote staging → prod,
+# or onboard a teammate). Unconditional upsert — existing entries are overwritten:
+amnesic import orders.prod orders-knowledge.json
+
+# Wipe stored knowledge for a connection but keep the config entry:
+amnesic clear orders.staging
+
+# Drop a connection from connections.toml entirely (knowledge file kept
+# unless you pass --delete-knowledge):
+amnesic remove old.connection
+amnesic remove old.connection --delete-knowledge
+```
+
+`export`/`import`/`clear`/`remove` operate purely on local files — they never connect to the database, so they work even if a connection's credentials aren't set. `remove` edits `connections.toml` with surgical string edits, leaving every other block's formatting and comments byte-for-byte intact.
+
 ---
 
 ## Add to your AI client
