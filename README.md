@@ -4,6 +4,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/amnesic.svg)](https://pypi.org/project/amnesic/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![MCP Registry](https://img.shields.io/badge/MCP-Registry-7d6ad9.svg)](https://registry.modelcontextprotocol.io)
+[![Glama score](https://glama.ai/mcp/servers/SurajKGoyal/amnesic/badges/score.svg)](https://glama.ai/mcp/servers/SurajKGoyal/amnesic)
 
 **Persistent semantic memory for your SQL databases. The name is ironic — it remembers everything.**
 
