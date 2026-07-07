@@ -163,7 +163,7 @@ Once amnesic is installed with the right driver extras (see [Quickstart](#quicks
 **One-line install** (recommended — no JSON editing). Inside Claude Code:
 
 ```
-/plugin marketplace add SurajKGoyal/amnesic-marketplace
+/plugin marketplace add https://github.com/SurajKGoyal/amnesic-marketplace
 /plugin install amnesic@amnesic
 ```
 
