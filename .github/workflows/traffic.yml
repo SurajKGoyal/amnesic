@@ -14,7 +14,10 @@ on:
 
 permissions:
   contents: write # commit the updated metrics file
-  administration: read # the traffic API needs repo admin/push scope
+# NOTE: the traffic API needs repo admin/push scope, which GITHUB_TOKEN cannot
+# grant — `administration` is not a valid permissions key here. A METRICS_TOKEN
+# secret (fine-grained PAT, "Administration: Read-only") is REQUIRED, not
+# optional. See metrics/README.md.
 
 concurrency:
   group: traffic-snapshot
@@ -32,11 +35,10 @@ jobs:
 
       - name: Snapshot traffic
         env:
-          # METRICS_TOKEN is a fine-grained PAT with "Administration: Read-only".
-          # The default GITHUB_TOKEN is often rejected (403) by the traffic API;
-          # the script says so explicitly if that happens.
+          # Required. GITHUB_TOKEN cannot reach the traffic API — it has no way
+          # to carry the admin/push scope the endpoint demands. The script exits
+          # with the setup instructions if this is missing or rejected.
           METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/snapshot_traffic.py --repo "${{ github.repository }}"
 
       - name: Commit if changed

@@ -19,10 +19,11 @@ kind of thing that turns a real number into an indefensible one.
 
 ## Setup
 
-The traffic API requires push access, and the default `GITHUB_TOKEN` is often
-rejected with a 403. If the workflow fails:
+The traffic API requires repo admin/push scope. Actions' built-in `GITHUB_TOKEN`
+**cannot** provide it — `administration` isn't a grantable permission for that
+token — so a PAT is required, not a fallback:
 
-1. Create a fine-grained PAT scoped to this repo with **Administration:
+1. **Required.** Create a fine-grained PAT scoped to this repo with **Administration:
    Read-only**.
 2. Add it as the `METRICS_TOKEN` repository secret.
 
