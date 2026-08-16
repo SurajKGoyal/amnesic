@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS schema_cache (
     data_type   TEXT,
     is_nullable TEXT,
     max_length  INTEGER,
-    cached_at   TEXT DEFAULT (datetime('now')),
+    cached_at   TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     PRIMARY KEY (table_fqn, column_name)
 );
 """
@@ -159,6 +159,11 @@ class KnowledgeStore:
             # v0.2 migration: add deprecation columns to pre-v0.2 knowledge
             # tables (idempotent — skipped when the columns already exist).
             self._migrate_deprecation_columns()
+            # Same pattern for schema_cache.cached_at: stores created before
+            # staleness reporting lack the column entirely, and ALTER cannot
+            # add a non-constant DEFAULT, so old rows keep NULL (reported as
+            # unknown age rather than pretending to be fresh).
+            self._migrate_schema_cache_cached_at()
             # One-time migration: lowercase existing column_name values so future
             # lookups (which always lowercase) match annotations saved before
             # the v0.1.11 case-insensitivity fix.
@@ -241,6 +246,21 @@ class KnowledgeStore:
                         f"ALTER TABLE {table} ADD COLUMN {col_name} {col_decl}"
                     )
 
+    def _migrate_schema_cache_cached_at(self) -> None:
+        """Idempotently add cached_at to a pre-staleness schema_cache table.
+
+        Assumes the caller holds self._lock. Stores created before schema
+        staleness reporting have no cached_at column at all; ALTER TABLE cannot
+        add a DEFAULT calling a function, so migrated rows stay NULL and are
+        reported as cache_age_days: null rather than a bogus age.
+        """
+        existing = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(schema_cache)").fetchall()
+        }
+        if "cached_at" not in existing:
+            self._conn.execute("ALTER TABLE schema_cache ADD COLUMN cached_at TEXT")
+
     # ------------------------------------------------------------------
     # Schema cache
     # ------------------------------------------------------------------
@@ -258,6 +278,21 @@ class KnowledgeStore:
         if not rows:
             return None
         return [dict(r) for r in rows]
+
+    def get_schema_cache_timestamp(self, table_fqn: str) -> str | None:
+        """Return the newest cached_at stamp for a table's cached schema.
+
+        None when the table is not cached or when the rows predate the
+        cached_at column (migrated stores) — callers report unknown age
+        rather than guessing.
+        """
+        key = table_fqn.lower().strip()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT MAX(cached_at) AS stamp FROM schema_cache WHERE table_fqn = ?",
+                (key,),
+            ).fetchone()
+        return row["stamp"] if row and row["stamp"] else None
 
     def save_cached_schema(self, table_fqn: str, columns: list[dict[str, Any]]) -> None:
         """Replace all cached columns for a table."""
@@ -277,9 +312,12 @@ class KnowledgeStore:
                 "DELETE FROM schema_cache WHERE table_fqn = ?", (key,)
             )
             if params:
+                # Stamp explicitly (not via the column DEFAULT) so the format
+                # is pinned here regardless of how the table was created:
+                # UTC ISO-8601 with a trailing Z.
                 self._conn.executemany(
-                    "INSERT INTO schema_cache (table_fqn, column_name, data_type, is_nullable, max_length) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO schema_cache (table_fqn, column_name, data_type, is_nullable, max_length, cached_at) "
+                    "VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
                     params,
                 )
             self._conn.commit()

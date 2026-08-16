@@ -54,7 +54,7 @@ The database MCP ecosystem splits into two camps, and amnesic is deliberately in
 | **Survives across sessions** | ✅ | ❌ | ✅ |
 | **Portable / outlives DB access** | ✅ `export`/`import` | ❌ | ⚠️ platform-bound |
 | **Setup cost** | one command | one command | ingestion pipeline |
-| **Live schema freshness** | ⚠️ cached, manual refresh | ✅ always live | ⚠️ ingestion lag |
+| **Live schema freshness** | ✅ cached, staleness reported | ✅ always live | ⚠️ ingestion lag |
 | **Execution plans / index tuning** | ❌ | ✅ (Postgres MCP Pro) | ❌ |
 | **Lineage / ownership / governance** | ❌ | ❌ | ✅ |
 | **Works on legacy schemas with no FK constraints** | ✅ annotate them yourself | ❌ nothing to introspect | ⚠️ needs ingestion |

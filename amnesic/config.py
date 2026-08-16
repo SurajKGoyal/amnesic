@@ -116,6 +116,10 @@ class ConnectionConfig:
     password: str = ""
     tunnel_script: str = ""
     default_schema: str = ""
+    # Schema-cache staleness threshold in days for this connection.
+    # None = not configured: fall back to AMNESIC_SCHEMA_TTL_DAYS, then 30.
+    # 0 = never report stale (set explicitly to override the env/global value).
+    schema_cache_ttl_days: int | None = None
 
     def __post_init__(self) -> None:
         if not self.default_schema:
@@ -183,6 +187,11 @@ def _parse_connections(
                     password=expanded.get("password", ""),
                     tunnel_script=expanded.get("tunnel_script", ""),
                     default_schema=expanded.get("default_schema", ""),
+                    schema_cache_ttl_days=(
+                        int(expanded["schema_cache_ttl_days"])
+                        if expanded.get("schema_cache_ttl_days") is not None
+                        else None
+                    ),
                 )
             except (TypeError, ValueError) as exc:
                 raise ConfigError(
