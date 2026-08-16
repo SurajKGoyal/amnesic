@@ -6,9 +6,11 @@
 [![MCP Registry](https://img.shields.io/badge/MCP-Registry-7d6ad9.svg)](https://registry.modelcontextprotocol.io)
 [![Glama score](https://glama.ai/mcp/servers/SurajKGoyal/amnesic/badges/score.svg)](https://glama.ai/mcp/servers/SurajKGoyal/amnesic)
 
-**Persistent semantic memory for your SQL databases. The name is ironic — it remembers everything.**
+**Your database's institutional memory, as an MCP server. The name is ironic — it remembers everything.**
 
 *"The MCP server with the most ironic name in the registry. It's anything but amnesic — it remembers your database so your AI doesn't have to."*
+
+Most database MCP servers are **query executors**: they connect, introspect, run SQL, and forget. amnesic is a **semantic memory** — it accumulates what your schema *means* (what `status = 3` is, which columns are really foreign keys, what that legacy table is for) and hands it to every future session automatically. Think data catalog, minus the platform, the ingestion pipeline, and the invoice. [Where amnesic fits ↓](#where-amnesic-fits)
 
 <p align="center">
   <img src="assets/demo.svg" alt="Teach your AI a status code once, then query it in plain language forever. Your AI agent calls amnesic's tools; amnesic remembers across sessions." width="720">
@@ -27,6 +29,39 @@
 Every session with an AI starts cold. You spend the first few minutes re-explaining what tables exist, what a `status` column value of `3` means, which FK connects `orders` to `users`. Then the session ends, and you do it all over again tomorrow.
 
 **amnesic fixes this.** It gives your AI a persistent SQLite knowledge store — one per database — that survives across sessions. Annotate a status enum once; every future session sees those labels automatically. Discover FK relationships once; every future JOIN query uses that graph.
+
+The knowledge is also **portable and outlives your access to the database**. When you rotate off a project, `amnesic export` hands the next developer everything you taught it — years of "oh, that column actually means…" that would otherwise leave with you.
+
+---
+
+## Where amnesic fits
+
+The database MCP ecosystem splits into two camps, and amnesic is deliberately in neither.
+
+**Query executors** — [DBHub](https://github.com/bytebase/dbhub), [Postgres MCP Pro](https://github.com/crystaldba/postgres-mcp), [Google's MCP Toolbox](https://github.com/googleapis/mcp-toolbox), and the vendor servers (Supabase, Neon). They introspect live, run SQL, and some go deep on performance — Postgres MCP Pro does genuine index tuning and PgHero-style health checks. They are excellent at this. They are also **stateless**: every session re-learns your schema from scratch, and nothing they return can tell you what a column *means*, because the database doesn't know either.
+
+**Enterprise catalogs** — [DataHub](https://datahub.com/), Atlan, Cube, AtScale. These *do* hold semantic context: glossaries, column descriptions, ownership, lineage. They're also a platform commitment — metadata ingestion, a service to run, usually a paid tier. Worth it at company scale; wildly disproportionate for one developer who needs to remember what six status codes mean in a legacy MSSQL database nobody will ever onboard to a catalog.
+
+**amnesic is the third thing**: catalog-grade semantic memory at query-executor setup cost. `pipx install`, one TOML file, a local SQLite file per database. No platform, no ingestion, no server to run.
+
+### Honest comparison
+
+| | amnesic | Query executors | Enterprise catalogs |
+|---|---|---|---|
+| **Semantic context** (what a value *means*) | ✅ persistent, yours | ❌ none | ✅ platform-managed |
+| **Survives across sessions** | ✅ | ❌ | ✅ |
+| **Portable / outlives DB access** | ✅ `export`/`import` | ❌ | ⚠️ platform-bound |
+| **Setup cost** | one command | one command | ingestion pipeline |
+| **Live schema freshness** | ⚠️ cached, manual refresh | ✅ always live | ⚠️ ingestion lag |
+| **Execution plans / index tuning** | ❌ | ✅ (Postgres MCP Pro) | ❌ |
+| **Lineage / ownership / governance** | ❌ | ❌ | ✅ |
+| **Works on legacy schemas with no FK constraints** | ✅ annotate them yourself | ❌ nothing to introspect | ⚠️ needs ingestion |
+
+**Use a query executor instead of amnesic if** you want execution plans, index recommendations, or database health diagnostics — that's not amnesic's job and adding it would make it a worse version of a tool that already exists.
+
+**Use amnesic alongside one.** They compose: nothing stops you running both. amnesic holds the meaning; they hold the machinery.
+
+The rows marked ⚠️ above are known gaps with open issues — see [Roadmap ↓](#roadmap).
 
 ---
 
@@ -553,9 +588,23 @@ That's measurably less data movement than a "naked" SQL MCP — which has to run
 
 ## Roadmap
 
-What's coming: knowledge lifecycle management (v0.2 — `db_deprecate`, drift detection, export/import for team handoff), query intelligence (v0.3 — `db_explain`, query history), team sharing (v0.4), and more. See [ROADMAP.md](./ROADMAP.md) for the full picture.
+Shipped so far: the knowledge layer (v0.1), BM25 search (v0.1.5), lifecycle management — deprecate / drift detection / forget (v0.2), and portable knowledge export/import (v0.2.2).
 
-Have an idea? [Open an issue.](https://github.com/SurajKGoyal/amnesic/issues/new)
+**Next up (v0.3 — "Earn the memory"):** knowledge that accumulates *without anyone typing it* — enum auto-discovery, soft-FK inference for legacy schemas with no constraints, and JOIN-pattern learning. Plus the table-stakes work: a token budget on every response, indexes and primary keys in the schema fetch, cache staleness flags, and a smaller tool surface.
+
+See [ROADMAP.md](./ROADMAP.md) for the full picture and the reasoning behind the ordering.
+
+### 🙌 Contributions wanted
+
+Every v0.3 item is filed as a GitHub issue with the design already thought through — the problem, the proposed shape, the files to touch, and how to test it. Several are tagged [`good first issue`](https://github.com/SurajKGoyal/amnesic/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+
+**Pick one and open a PR** — no need to ask first. Just comment on the issue so two people don't build the same thing.
+
+- 👉 **[Browse open issues](https://github.com/SurajKGoyal/amnesic/issues)** · [help wanted](https://github.com/SurajKGoyal/amnesic/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) · [good first issue](https://github.com/SurajKGoyal/amnesic/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+- New driver? Follow the structure in [`amnesic/drivers.py`](amnesic/drivers.py) and [`amnesic/tools/schema.py`](amnesic/tools/schema.py).
+- Tests live in [`tests/`](tests/). New tools need unit tests; run `pytest tests/` before opening the PR.
+
+Have an idea that isn't listed? [Open an issue.](https://github.com/SurajKGoyal/amnesic/issues/new) A use case beats a patch — it saves you rework.
 
 ---
 
