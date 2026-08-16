@@ -20,6 +20,8 @@ Most database MCP servers are **query executors**: they connect, introspect, run
 
 **Available on** [Official MCP Registry](https://registry.modelcontextprotocol.io) · [Claude Code plugin marketplace](https://github.com/SurajKGoyal/amnesic-marketplace)
 
+👋 **Using amnesic?** [Say hi in the adopters thread](https://github.com/SurajKGoyal/amnesic/issues/16) — download counts can't tell me what's actually being used, and it directly shapes what gets built next.
+
 > 🔒 **Read-only by design.** amnesic refuses to execute `INSERT`, `UPDATE`, `DELETE`, `DROP`, `TRUNCATE`, `ALTER`, `CREATE`, `EXEC`, `MERGE`, `GRANT`, `REVOKE` — and any write statement smuggled inside a `WITH` CTE. Two layers of defense: static SQL analysis rejects the statement before connecting, **and** every query runs inside a transaction that is immediately rolled back. Safe to point at prod. [Details ↓](#safety--read-only-enforcement)
 
 ---

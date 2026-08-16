@@ -1,0 +1,52 @@
+name: Traffic snapshot
+
+# GitHub retains only 14 days of clone/view traffic. This job appends each day's
+# rows to metrics/traffic.json so the history survives, giving a real long-run
+# adoption signal instead of a rolling window.
+#
+# Runs daily. The 14-day window means a few missed runs lose nothing — any run
+# within 14 days of the last one backfills the gap.
+
+on:
+  schedule:
+    - cron: "17 4 * * *" # 04:17 UTC daily — off the hour, GitHub's cron queue is busy on :00
+  workflow_dispatch: # manual run, e.g. to backfill immediately after setup
+
+permissions:
+  contents: write # commit the updated metrics file
+  administration: read # the traffic API needs repo admin/push scope
+
+concurrency:
+  group: traffic-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Snapshot traffic
+        env:
+          # METRICS_TOKEN is a fine-grained PAT with "Administration: Read-only".
+          # The default GITHUB_TOKEN is often rejected (403) by the traffic API;
+          # the script says so explicitly if that happens.
+          METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/snapshot_traffic.py --repo "${{ github.repository }}"
+
+      - name: Commit if changed
+        run: |
+          if [[ -z "$(git status --porcelain metrics/traffic.json)" ]]; then
+            echo "No traffic change — nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add metrics/traffic.json
+          git commit -m "chore(metrics): traffic snapshot $(date -u +%Y-%m-%d)"
+          git push
