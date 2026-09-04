@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS schema_cache (
     data_type   TEXT,
     is_nullable TEXT,
     max_length  INTEGER,
+    -- Timestamps written by new code are UTC ISO-8601 with a trailing Z
+    -- (the going-forward standard for this store); the legacy bare
+    -- datetime('now') form is read compatibly and slated for migration.
     cached_at   TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     PRIMARY KEY (table_fqn, column_name)
 );

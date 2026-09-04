@@ -498,7 +498,13 @@ password = "${ANALYTICS_DB_PASSWORD}"
 driver = "sqlite"
 database = "/absolute/path/to/local.db"       # macOS / Linux
 # database = "C:/path/to/local.db"            # Windows (use forward slashes)
+
+# Optional, any connection: days before db_get_schema flags the cached
+# schema as stale (0 disables the flag for that connection).
+# schema_cache_ttl_days = 30
 ```
+
+The TTL defaults to `AMNESIC_SCHEMA_TTL_DAYS` (30) when the env var is set, and to 30 otherwise; a per-connection `schema_cache_ttl_days` overrides both. Set it to 0 to disable staleness flagging.
 
 Use `${ENV_VAR}` for credentials — never hardcode passwords.
 

@@ -65,34 +65,39 @@ def _cache_info(
     stamp: str | None,
     ttl_days: int,
 ) -> dict:
-    """Build the cached_at / cache_age_days / stale / hint block for db_get_schema."""
+    """Build the cached_at / cache_age_days / stale / hint block for db_get_schema.
+
+    Follows the response convention of omitting a flag that does not apply
+    (like `deprecated`): `stale` is present only when an age was computed
+    and staleness reporting is enabled, so a reader never has to guess
+    which meaning a null carries.
+    """
     info: dict = {"cached": cached}
     if stamp is None:
         # Not cached, or rows predate the cached_at column: report unknown
         # age rather than pretending the cache is fresh.
         info["cached_at"] = None
         info["cache_age_days"] = None
-        info["stale"] = None
         return info
     parsed = _parse_cache_stamp(stamp)
     if parsed is None:
         info["cached_at"] = stamp
         info["cache_age_days"] = None
-        info["stale"] = None
         return info
-    age_days = (datetime.now(timezone.utc) - parsed).days
+    # Clamp at zero: a skewed or future-dated stamp is a clock artifact,
+    # not a negative cache age.
+    age_days = max(0, (datetime.now(timezone.utc) - parsed).days)
     info["cached_at"] = stamp
     info["cache_age_days"] = age_days
     if ttl_days <= 0:
         # Staleness reporting disabled — age is still surfaced, the flag is not.
-        info["stale"] = None
-    else:
-        info["stale"] = age_days >= ttl_days
-        if info["stale"]:
-            info["hint"] = (
-                f"Schema cached {age_days} days ago. "
-                "Pass force_refresh=true to re-fetch, or run db_detect_drift."
-            )
+        return info
+    info["stale"] = age_days >= ttl_days
+    if info["stale"]:
+        info["hint"] = (
+            f"Schema cached {age_days} days ago. "
+            "Pass force_refresh=true to re-fetch, or run db_detect_drift."
+        )
     return info
 
 

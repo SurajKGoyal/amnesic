@@ -96,7 +96,7 @@ class TestSchemaCacheStaleness:
         _backdate(store, 400)
         result = _get_schema(store, monkeypatch, ttl_env=0)
         assert result["cache_age_days"] == 400
-        assert result["stale"] is None
+        assert "stale" not in result
         assert "hint" not in result
 
     def test_connection_ttl_overrides_env(self, store, monkeypatch):
@@ -112,7 +112,7 @@ class TestSchemaCacheStaleness:
         _backdate(store, 45)
         result = _get_schema(store, monkeypatch, ttl_conn=0)
         assert result["cache_age_days"] == 45
-        assert result["stale"] is None
+        assert "stale" not in result
 
     def test_legacy_sqlite_stamp_format_is_parsed(self, store, monkeypatch):
         _get_schema(store, monkeypatch)
@@ -120,6 +120,15 @@ class TestSchemaCacheStaleness:
         result = _get_schema(store, monkeypatch)
         assert result["cache_age_days"] == 100
         assert result["stale"] is True
+
+    def test_future_dated_stamp_clamps_to_zero(self, store, monkeypatch):
+        """A skewed or future-dated stamp is a clock artifact, not a negative
+        cache age: the reported age clamps to 0 and the schema reads fresh."""
+        _get_schema(store, monkeypatch)
+        _backdate(store, -3)
+        result = _get_schema(store, monkeypatch)
+        assert result["cache_age_days"] == 0
+        assert result["stale"] is False
 
 
 class TestCachedAtMigration:
@@ -163,4 +172,4 @@ class TestCachedAtMigration:
         assert result["cached"] is True
         assert result["cached_at"] is None
         assert result["cache_age_days"] is None
-        assert result["stale"] is None
+        assert "stale" not in result
