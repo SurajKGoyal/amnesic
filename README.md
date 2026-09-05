@@ -54,7 +54,7 @@ The database MCP ecosystem splits into two camps, and amnesic is deliberately in
 | **Survives across sessions** | ✅ | ❌ | ✅ |
 | **Portable / outlives DB access** | ✅ `export`/`import` | ❌ | ⚠️ platform-bound |
 | **Setup cost** | one command | one command | ingestion pipeline |
-| **Live schema freshness** | ⚠️ cached, manual refresh | ✅ always live | ⚠️ ingestion lag |
+| **Live schema freshness** | ✅ cached, staleness reported | ✅ always live | ⚠️ ingestion lag |
 | **Execution plans / index tuning** | ❌ | ✅ (Postgres MCP Pro) | ❌ |
 | **Lineage / ownership / governance** | ❌ | ❌ | ✅ |
 | **Works on legacy schemas with no FK constraints** | ✅ annotate them yourself | ❌ nothing to introspect | ⚠️ needs ingestion |
@@ -498,7 +498,13 @@ password = "${ANALYTICS_DB_PASSWORD}"
 driver = "sqlite"
 database = "/absolute/path/to/local.db"       # macOS / Linux
 # database = "C:/path/to/local.db"            # Windows (use forward slashes)
+
+# Optional, any connection: days before db_get_schema flags the cached
+# schema as stale (0 disables the flag for that connection).
+# schema_cache_ttl_days = 30
 ```
+
+The TTL defaults to `AMNESIC_SCHEMA_TTL_DAYS` (30) when the env var is set, and to 30 otherwise; a per-connection `schema_cache_ttl_days` overrides both. Set it to 0 to disable staleness flagging.
 
 Use `${ENV_VAR}` for credentials — never hardcode passwords.
 
