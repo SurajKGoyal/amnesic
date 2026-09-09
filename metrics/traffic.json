@@ -495,6 +495,14 @@
       "clones_uniques": 74,
       "views_total": 104,
       "views_uniques": 17
+    },
+    {
+      "snapshot_date": "2026-09-09",
+      "window_days": 14,
+      "clones_total": 225,
+      "clones_uniques": 74,
+      "views_total": 104,
+      "views_uniques": 17
     }
   ],
   "totals": {
