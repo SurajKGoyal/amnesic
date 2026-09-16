@@ -178,6 +178,10 @@
       "2026-09-14": {
         "count": 6,
         "uniques": 3
+      },
+      "2026-09-15": {
+        "count": 9,
+        "uniques": 6
       }
     },
     "views": {
@@ -354,6 +358,10 @@
         "uniques": 2
       },
       "2026-09-14": {
+        "count": 2,
+        "uniques": 1
+      },
+      "2026-09-15": {
         "count": 2,
         "uniques": 1
       }
@@ -607,13 +615,21 @@
       "clones_uniques": 69,
       "views_total": 91,
       "views_uniques": 14
+    },
+    {
+      "snapshot_date": "2026-09-16",
+      "window_days": 14,
+      "clones_total": 159,
+      "clones_uniques": 70,
+      "views_total": 81,
+      "views_uniques": 14
     }
   ],
   "totals": {
-    "days_recorded": 44,
-    "clones_all_time": 468,
-    "views_all_time": 212,
+    "days_recorded": 45,
+    "clones_all_time": 477,
+    "views_all_time": 214,
     "first_day": "2026-08-02",
-    "last_day": "2026-09-14"
+    "last_day": "2026-09-15"
   }
 }
