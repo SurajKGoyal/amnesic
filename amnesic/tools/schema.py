@@ -4,7 +4,12 @@ db_get_schema, db_list_tables — schema introspection with knowledge merge.
 Supports MSSQL, PostgreSQL, MySQL, SQLite.
 FQN normalization is driver-specific.
 Schema results are cached in the KnowledgeStore and enriched with annotations.
+Cached schemas report their age and a `stale` flag so the agent can decide
+whether to force_refresh — the cache is never silently refreshed for you.
 """
+
+import os
+from datetime import datetime, timezone
 
 from sqlalchemy import text
 
@@ -12,6 +17,88 @@ from amnesic.config import ConnectionConfig, load_config, resolve_connection
 from amnesic.drivers import get_engine, safe_connect
 from amnesic.readonly import validate_identifier
 from amnesic.store import get_store
+
+_DEFAULT_SCHEMA_TTL_DAYS = 30
+
+
+def _resolve_schema_ttl_days(conn_cfg: ConnectionConfig) -> int:
+    """Staleness threshold in days: per-connection override, then env, then 30.
+
+    0 at either level disables staleness reporting entirely.
+    """
+    if conn_cfg.schema_cache_ttl_days is not None:
+        return conn_cfg.schema_cache_ttl_days
+    env_raw = os.environ.get("AMNESIC_SCHEMA_TTL_DAYS")
+    if env_raw is not None and env_raw.strip() != "":
+        try:
+            return int(env_raw)
+        except ValueError:
+            # Unreadable global setting: fall through to the default rather
+            # than refusing to serve schemas over a typo.
+            pass
+    return _DEFAULT_SCHEMA_TTL_DAYS
+
+
+def _parse_cache_stamp(stamp: str) -> datetime | None:
+    """Parse a cached_at stamp into an aware UTC datetime.
+
+    Accepts both the current ISO-8601 form (2026-02-14T09:31:02Z) and the
+    legacy SQLite datetime('now') form (2026-02-14 09:31:02). Returns None
+    for anything unparseable — the caller reports unknown age instead of
+    guessing.
+    """
+    raw = stamp.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1]
+    raw = raw.replace(" ", "T", 1) if " " in raw and "T" not in raw else raw
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _cache_info(
+    cached: bool,
+    stamp: str | None,
+    ttl_days: int,
+) -> dict:
+    """Build the cached_at / cache_age_days / stale / hint block for db_get_schema.
+
+    Follows the response convention of omitting a flag that does not apply
+    (like `deprecated`): `stale` is present only when an age was computed
+    and staleness reporting is enabled, so a reader never has to guess
+    which meaning a null carries.
+    """
+    info: dict = {"cached": cached}
+    if stamp is None:
+        # Not cached, or rows predate the cached_at column: report unknown
+        # age rather than pretending the cache is fresh.
+        info["cached_at"] = None
+        info["cache_age_days"] = None
+        return info
+    parsed = _parse_cache_stamp(stamp)
+    if parsed is None:
+        info["cached_at"] = stamp
+        info["cache_age_days"] = None
+        return info
+    # Clamp at zero: a skewed or future-dated stamp is a clock artifact,
+    # not a negative cache age.
+    age_days = max(0, (datetime.now(timezone.utc) - parsed).days)
+    info["cached_at"] = stamp
+    info["cache_age_days"] = age_days
+    if ttl_days <= 0:
+        # Staleness reporting disabled — age is still surfaced, the flag is not.
+        return info
+    info["stale"] = age_days >= ttl_days
+    if info["stale"]:
+        info["hint"] = (
+            f"Schema cached {age_days} days ago. "
+            "Pass force_refresh=true to re-fetch, or run db_detect_drift."
+        )
+    return info
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +362,13 @@ def db_get_schema(
         force_refresh: Skip the cache and fetch fresh from the database.
 
     Returns:
-        {table, connection, columns (with annotations), table_description, cached}
+        {table, connection, columns (with annotations), table_description,
+         cached, cached_at, cache_age_days, stale[, hint]}
+        cached_at/cache_age_days/stale are null when the age is unknown
+        (fresh fetch failures aside, mainly rows cached before the
+        cached_at column existed). stale is true past the TTL threshold
+        (per-connection schema_cache_ttl_days, then AMNESIC_SCHEMA_TTL_DAYS,
+        default 30 days; 0 disables the flag).
     """
     connections = load_config()
     conn_cfg = resolve_connection(connection, connections)
@@ -293,6 +386,12 @@ def db_get_schema(
 
     merged = _merge_knowledge_into_schema(fqn, columns, conn_cfg.name)
 
+    cache = _cache_info(
+        cached,
+        store.get_schema_cache_timestamp(fqn),
+        _resolve_schema_ttl_days(conn_cfg),
+    )
+
     return {
         "table": fqn,
         "connection": conn_cfg.name,
@@ -300,7 +399,7 @@ def db_get_schema(
         "table_description": merged["table_description"],
         "table_deprecated": merged["table_deprecated"],
         "table_deprecated_reason": merged["table_deprecated_reason"],
-        "cached": cached,
+        **cache,
     }
 
 
