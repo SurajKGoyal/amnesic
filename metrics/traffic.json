@@ -366,6 +366,10 @@
       "2026-10-31": {
         "count": 28,
         "uniques": 19
+      },
+      "2026-11-01": {
+        "count": 15,
+        "uniques": 6
       }
     },
     "views": {
@@ -732,6 +736,10 @@
       "2026-10-31": {
         "count": 2,
         "uniques": 2
+      },
+      "2026-11-01": {
+        "count": 0,
+        "uniques": 0
       }
     }
   },
@@ -1359,13 +1367,21 @@
       "clones_uniques": 109,
       "views_total": 37,
       "views_uniques": 25
+    },
+    {
+      "snapshot_date": "2026-11-02",
+      "window_days": 14,
+      "clones_total": 202,
+      "clones_uniques": 96,
+      "views_total": 35,
+      "views_uniques": 25
     }
   ],
   "totals": {
-    "days_recorded": 91,
-    "clones_all_time": 1177,
+    "days_recorded": 92,
+    "clones_all_time": 1192,
     "views_all_time": 302,
     "first_day": "2026-08-02",
-    "last_day": "2026-10-31"
+    "last_day": "2026-11-01"
   }
 }
