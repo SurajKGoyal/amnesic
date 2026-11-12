@@ -39,8 +39,8 @@ Recommended workflow for any DB question:
 3. db_get_schema(table, connection) — get columns + saved annotations BEFORE writing SQL
    (if it returns stale: true, the cached schema may be outdated — re-call with
    force_refresh=true before relying on it.)
-   db_discover_enums(table) — on an unfamiliar table, propose enum values for
-   status/type columns; label them with the user, then db_annotate.
+   db_discover_enums(table) — only when the user wants to know what a column's
+   values mean and db_get_schema shows no enum_values for it.
 4. db_get_relationships(table, connection) — understand JOINs before complex queries
 5. db_query(sql, connection) — execute read-only SELECT
 6. db_annotate(...) — persist new understanding (enum meanings, FKs, table purpose)
@@ -427,11 +427,10 @@ def db_discover_enums(
     """
     Propose enum values for low-cardinality columns in a table — never writes to the store.
 
-    Probes integer and short-string columns, sampling sample_rows rows. Columns
-    with more than max_distinct values, or whose values mostly don't repeat, go to
-    not_enum; key columns (id, *_id) and already-annotated ones are skipped. Each
-    candidate's suggested_action is a db_annotate() template with "<meaning>"
-    placeholders: infer labels from context, confirm with the user, then save.
+    Probes integer and short-string columns, reading at most sample_rows rows each.
+    Columns with more than max_distinct values, or whose values mostly don't repeat,
+    go to not_enum; key columns (id, *_id) and already-annotated ones are skipped.
+    Do not call db_annotate until the user has confirmed what each value means.
 
     Args:
         table:        Table name (required), optionally schema-qualified.
@@ -439,12 +438,12 @@ def db_discover_enums(
         max_distinct: Max distinct values for a column to be a candidate (default 25).
         sample_rows:  Rows to scan per column (default 10000). Use 0 for a full scan.
         force:        Re-probe columns that already have enum_values (default False).
-        columns:      Probe only these columns (also reaches columns past the 20-per-call cap).
+        columns:      Probe only these columns — use it to reach one that a default
+                      call skipped because of the 20-column cap (the cap still applies).
 
     Returns:
         {table, connection,
-         candidates: [{column, data_type, distinct_count, values: [{value, count}],
-                       suggested_action}],
+         candidates: [{column, data_type, distinct_count, values: [{value, count}]}],
          not_enum: [col, ...], skipped: [{column, reason}],
          sampled, sample_rows, note}
     """

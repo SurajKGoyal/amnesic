@@ -8,15 +8,15 @@ supplies meaning; this tool supplies the values.
 Design rationale for the sampling approach:
   A full GROUP BY on a 100M-row status column is cheap — O(n) scan, tiny result.
   But on wide tables with many columns, running N full scans in one call adds up.
-  The LIMIT-bounded subquery approach samples at most `sample_rows` rows cheaply
-  (storage engine stops after the first N rows), then groups only those. The trade-
-  off: rare values in a large table may be missed. Users can re-run with
-  sample_rows=0 for a full scan when completeness matters.
+  Each probe reads at most `sample_rows` rows (the row limit is applied before
+  the NULL filter, so sparse columns don't extend the scan), then groups only
+  those. The trade-off: rare values may be missing from the sample. sample_rows=0
+  does a full scan per column when completeness matters. TABLESAMPLE was ruled
+  out: SQLite has none, and its syntax and semantics differ across the others.
 """
 
 from __future__ import annotations
 
-import json
 import re
 from decimal import Decimal
 
@@ -48,6 +48,7 @@ _SKIP_TYPES = frozenset({
 # candidates the schema has. Report the rest as skipped so callers know.
 _COLUMN_PROBE_CAP = 20
 
+
 def _looks_like_key(col_name: str) -> bool:
     """`id`, `customer_id`, `orderId`, `CustomerID` are keys, not enums.
 
@@ -58,7 +59,10 @@ def _looks_like_key(col_name: str) -> bool:
     if col_name.lower() == "id" or col_name.lower().endswith("_id"):
         return True
     # camelCase / PascalCase suffix: orderId, CustomerID (but not "paid", "valid")
-    return bool(re.search(r"[a-z0-9](Id|ID)$", col_name))
+    if re.search(r"[a-z0-9](Id|ID)$", col_name):
+        return True
+    # ALL-CAPS legacy schemas: ORDERID, CUSTOMERID
+    return col_name.isupper() and len(col_name) > 2 and col_name.endswith("ID")
 
 
 def _normalize_type(data_type: str) -> tuple[str, int | None]:
@@ -81,7 +85,7 @@ def _normalize_type(data_type: str) -> tuple[str, int | None]:
     return base, parsed_len
 
 
-def _is_enum_candidate(data_type: str, max_length) -> bool:
+def _is_enum_candidate(data_type: str, max_length: int | None) -> bool:
     """
     Return True if this column type should be probed for enum values.
 
@@ -128,14 +132,18 @@ def _table_ref(driver: str, db: str, schema: str, table_name: str) -> str:
 
     Matches the identifier conventions in schema.py's _fetch_schema_from_db:
       sqlite:     table_name
-      postgres:   "schema"."table_name"
+      postgres:   schema.table_name   (unquoted — see below)
       mysql:      `db`.`table_name`
       mssql:      [db].[schema].[table_name]
     """
     if driver == "sqlite":
         return table_name
     if driver in ("postgres", "postgresql"):
-        return f'"{schema}"."{table_name}"'
+        # Unquoted on purpose: Postgres folds unquoted identifiers to lowercase,
+        # matching the store's lowercased fqn. Quoting the user's spelling would
+        # make "Orders" fail against a table named orders. Already validated
+        # [A-Za-z0-9_], so unquoted is still injection-safe.
+        return f"{schema}.{table_name}"
     if driver == "mysql":
         return f"`{db}`.`{table_name}`"
     if driver == "mssql":
@@ -154,51 +162,35 @@ def build_enum_sql(
     """
     Build the enum-discovery SQL for one column.
 
-    Exported for direct unit testing of SQL shape (quoting, TOP vs LIMIT) without
-    a live database. All integer arguments (sample_rows, cap) are caller-validated
-    ints; they are safe to interpolate directly.
+    The inner query reads at most `sample_rows` rows and the NULL filter is
+    applied OUTSIDE it. Filtering inside (`WHERE col IS NOT NULL LIMIT N`)
+    would make the engine keep reading until it found N non-null rows — on a
+    99.9%-NULL column of a 100M-row table that is ~10M rows, not N.
 
-    sample_rows=0 means a full scan (no LIMIT on the inner subquery).
-    cap should be max_distinct+1 so a single overflow row is detectable.
+    sample_rows=0 means a full scan (no inner limit). cap should be
+    max_distinct+1 so a single overflow group is detectable. Both are ints the
+    caller validated, so interpolating them is safe.
     """
     if driver == "mssql":
-        if sample_rows > 0:
-            inner = (
-                f"SELECT TOP ({sample_rows}) {col_quoted} AS v "
-                f"FROM {tbl_ref} WHERE {col_quoted} IS NOT NULL"
-            )
-        else:
-            inner = (
-                f"SELECT {col_quoted} AS v "
-                f"FROM {tbl_ref} WHERE {col_quoted} IS NOT NULL"
-            )
+        top = f"TOP ({sample_rows}) " if sample_rows > 0 else ""
+        inner = f"SELECT {top}{col_quoted} AS v FROM {tbl_ref}"
         return (
-            f"SELECT TOP ({cap}) v, COUNT(*) AS n "
-            f"FROM ({inner}) s GROUP BY v ORDER BY n DESC"
+            f"SELECT TOP ({cap}) v, COUNT(*) AS n FROM ({inner}) s "
+            f"WHERE v IS NOT NULL GROUP BY v ORDER BY n DESC"
         )
-    else:
-        # sqlite, postgres, mysql
-        if sample_rows > 0:
-            inner = (
-                f"SELECT {col_quoted} AS v "
-                f"FROM {tbl_ref} WHERE {col_quoted} IS NOT NULL LIMIT {sample_rows}"
-            )
-        else:
-            inner = (
-                f"SELECT {col_quoted} AS v "
-                f"FROM {tbl_ref} WHERE {col_quoted} IS NOT NULL"
-            )
-        return (
-            f"SELECT v, COUNT(*) AS n "
-            f"FROM ({inner}) s GROUP BY v ORDER BY n DESC LIMIT {cap}"
-        )
+    limit = f" LIMIT {sample_rows}" if sample_rows > 0 else ""
+    inner = f"SELECT {col_quoted} AS v FROM {tbl_ref}{limit}"
+    return (
+        f"SELECT v, COUNT(*) AS n FROM ({inner}) s "
+        f"WHERE v IS NOT NULL GROUP BY v ORDER BY n DESC LIMIT {cap}"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Value serialisation
 # ---------------------------------------------------------------------------
 
-def _safe_value(v) -> str | int | float | bool | None:
+def _safe_value(v: object) -> str | int | float | bool | None:
     """
     Convert a database value to a JSON-serialisable scalar.
 
@@ -225,8 +217,6 @@ def _safe_value(v) -> str | int | float | bool | None:
     if isinstance(v, bytes):
         return v.hex()
     return str(v)
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -264,11 +254,14 @@ def db_discover_enums(
 
     Returns:
         {table, connection, candidates, not_enum, skipped, sampled, sample_rows, note}
-        candidates: [{column, data_type, distinct_count, values: [{value, count}],
-                      suggested_action}]
-        suggested_action: a db_annotate() call template with discovered values as
-                          string keys and "<meaning>" placeholders.
+        candidates: [{column, data_type, distinct_count, values: [{value, count}]}]
+        distinct_count and counts describe the rows read, not the whole table.
     """
+    if max_distinct < 1:
+        raise ValueError(f"max_distinct must be at least 1, got {max_distinct}")
+    if sample_rows < 0:
+        raise ValueError(f"sample_rows must be 0 (full scan) or positive, got {sample_rows}")
+
     connections = load_config()
     conn_cfg = resolve_connection(connection, connections)
     driver = conn_cfg.driver.lower()
@@ -365,13 +358,18 @@ def db_discover_enums(
         )
 
         # run_readonly enforces assert_readonly + a rolled-back transaction.
-        rows, _ = run_readonly(conn_cfg, sql)
+        try:
+            rows, _ = run_readonly(conn_cfg, sql)
+        except Exception as exc:  # noqa: BLE001 — one bad column must not discard the rest
+            # safe_connect has already scrubbed credentials from the message.
+            skipped.append({"column": col_name, "reason": f"probe failed: {exc}"})
+            continue
 
         if not rows:
             # All-NULL or truly empty table — nothing to propose.
             skipped.append({
                 "column": col_name,
-                "reason": "no non-null values found",
+                "reason": "no non-null values in the rows read",
             })
             continue
 
@@ -396,32 +394,23 @@ def db_discover_enums(
             for row in rows
         ]
 
-        # suggested_action: db_annotate template with actual values as string keys.
-        # json.dumps escapes quotes/backslashes in values, and stringifies keys
-        # to match db_annotate's {"1": "label"} format.
-        enum_template = json.dumps({str(rv["value"]): "<meaning>" for rv in values})
-        suggested = (
-            f'db_annotate(table="{fqn}", column="{col_name}", '
-            f"enum_values={enum_template})"
-        )
-
         candidates_out.append({
             "column": col_name,
             "data_type": data_type,
             "distinct_count": distinct_count,
             "values": values,
-            "suggested_action": suggested,
         })
 
     sampled = sample_rows > 0
     note = (
-        "Values are proposals. Infer each label from context, confirm with the user, "
-        "then save with db_annotate."
+        "Values are proposals, not labels. Do not save anything until the user has "
+        "confirmed what each value means; then call db_annotate(table, column, "
+        'enum_values={"<value>": "<label>", ...}).'
     )
     if sampled:
         note += (
-            f" Sample of up to {sample_rows} rows used — rare values may be missing. "
-            "Use sample_rows=0 for a full scan."
+            f" Counts are from up to {sample_rows} rows per column, so rare values may "
+            "be missing; sample_rows=0 scans the whole table."
         )
 
     return {

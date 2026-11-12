@@ -81,6 +81,8 @@ def db_query(
     Returns:
         {rows, row_count, connection, database, truncated}
     """
+    # run_readonly checks this too; checking first keeps db_query's old contract
+    # of rejecting a write before any config is loaded or connection opened.
     assert_readonly(sql)
 
     connections = load_config()

@@ -104,10 +104,10 @@ class TestDiscoverEnumsHappyPath:
         # Sorted by count DESC
         counts = [v["count"] for v in status["values"]]
         assert counts == sorted(counts, reverse=True)
-        # suggested_action contains all five value keys
-        sa = status["suggested_action"]
-        for i in range(1, 6):
-            assert f'"{i}"' in sa, f"key '{i}' missing from suggested_action: {sa}"
+        assert sorted(v["value"] for v in status["values"]) == [1, 2, 3, 4, 5]
+        # No pre-filled template: the model must not be handed something it can
+        # save with placeholder labels.
+        assert "suggested_action" not in status
 
     def test_products_category_proposed(self, demo_conn: str) -> None:
         """category column (6 distinct text values) should be a candidate."""
@@ -275,20 +275,24 @@ class TestColumnProbeCap:
 # ---------------------------------------------------------------------------
 
 class TestSampleRows:
-    def test_sample_rows_bounds_scan(self, demo_conn: str) -> None:
-        """With sample_rows=10, counts for status must sum to exactly 10."""
-        result = db_discover_enums("orders", connection=demo_conn, sample_rows=10)
-        assert result["sampled"] is True
-        assert result["sample_rows"] == 10
+    def test_sample_rows_bounds_scan(self, custom_conn) -> None:
+        """sample_rows caps the rows read: 1000 rows, two values, sample of 10."""
+        def build(db_path: Path) -> None:
+            conn = sqlite3.connect(str(db_path))
+            conn.execute("CREATE TABLE t (kind INTEGER)")
+            conn.executemany("INSERT INTO t VALUES (?)", [(i % 2,) for i in range(1000)])
+            conn.commit()
+            conn.close()
 
-        status = next(
-            (c for c in result["candidates"] if c["column"] == "status"), None
-        )
-        # May or may not be a candidate (depends on which 10 rows get sampled),
-        # but if it is, counts must sum to ≤ 10.
-        if status:
-            total = sum(v["count"] for v in status["values"])
-            assert total <= 10
+        conn_name = custom_conn(build, name="sample")
+        result = db_discover_enums("t", connection=conn_name, sample_rows=10)
+        assert result["sampled"] is True and result["sample_rows"] == 10
+        kind = next(c for c in result["candidates"] if c["column"] == "kind")
+        assert sum(v["count"] for v in kind["values"]) == 10
+
+        full = db_discover_enums("t", connection=conn_name, sample_rows=0)
+        kind_full = next(c for c in full["candidates"] if c["column"] == "kind")
+        assert sum(v["count"] for v in kind_full["values"]) == 1000
 
     def test_sample_rows_zero_is_full_scan(self, demo_conn: str) -> None:
         """sample_rows=0 → sampled=False and counts sum to full table size."""
@@ -581,59 +585,6 @@ class TestBuildEnumSql:
 
 
 # ---------------------------------------------------------------------------
-# Verify db_query behaviour is unchanged (regression guard)
-# ---------------------------------------------------------------------------
-
-class TestDbQueryUnchanged:
-    """
-    Spot-check that refactoring db_query to use run_readonly didn't change
-    its observable behaviour. Full coverage lives in test_query.py.
-    """
-
-    @pytest.fixture()
-    def simple_conn(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
-        db_path = tmp_path / "simple.sqlite3"
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("CREATE TABLE t (id INTEGER, v TEXT)")
-        for i in range(1, 6):
-            conn.execute("INSERT INTO t VALUES (?, ?)", (i, f"r{i}"))
-        conn.commit()
-        conn.close()
-
-        toml = f"""
-[connections.simple]
-driver = "sqlite"
-database = "{db_path}"
-"""
-        (tmp_path / "connections.toml").write_text(toml)
-        monkeypatch.setenv("AMNESIC_CONFIG", str(tmp_path / "connections.toml"))
-        monkeypatch.setenv("AMNESIC_HOME", str(tmp_path))
-
-        yield "simple"
-
-        clear_engine_cache()
-        close_store("simple")
-
-    def test_query_returns_rows(self, simple_conn: str) -> None:
-        from amnesic.tools.query import db_query
-        result = db_query("SELECT * FROM t ORDER BY id", connection=simple_conn)
-        assert result["row_count"] == 5
-        assert result["truncated"] is False
-
-    def test_truncation_still_works(self, simple_conn: str) -> None:
-        from amnesic.tools.query import db_query
-        result = db_query("SELECT * FROM t ORDER BY id", connection=simple_conn, max_rows=3)
-        assert result["row_count"] == 3
-        assert result["truncated"] is True
-
-    def test_exact_max_rows_not_truncated(self, simple_conn: str) -> None:
-        from amnesic.tools.query import db_query
-        result = db_query("SELECT * FROM t ORDER BY id", connection=simple_conn, max_rows=5)
-        assert result["row_count"] == 5
-        assert result["truncated"] is False
-
-
-# ---------------------------------------------------------------------------
 # Review follow-ups: columns filter, suggested_action escaping, table validation
 # ---------------------------------------------------------------------------
 
@@ -661,7 +612,7 @@ class TestReviewFollowUps:
         targeted = db_discover_enums("wide", connection=conn_name, columns=[last])
         assert [c["column"] for c in targeted["candidates"]] == [last]
 
-    def test_suggested_action_escapes_quotes_in_values(self, custom_conn) -> None:
+    def test_values_with_quotes_round_trip(self, custom_conn) -> None:
         def build(db_path: Path) -> None:
             conn = sqlite3.connect(str(db_path))
             conn.execute("CREATE TABLE q (kind TEXT)")
@@ -671,10 +622,8 @@ class TestReviewFollowUps:
             conn.close()
 
         conn_name = custom_conn(build, name="quotes")
-        sa = db_discover_enums("q", connection=conn_name)["candidates"][0]["suggested_action"]
-        template = sa.split("enum_values=", 1)[1].rstrip(")")
-        import json as _json
-        assert set(_json.loads(template)) == {'a"b', "plain"}
+        values = db_discover_enums("q", connection=conn_name)["candidates"][0]["values"]
+        assert {v["value"] for v in values} == {'a"b', "plain"}
 
     def test_unsafe_table_name_rejected_before_sql(self, demo_conn: str, monkeypatch) -> None:
         """On a schema-cache hit db_get_schema never re-validates the table name,
@@ -691,3 +640,74 @@ class TestReviewFollowUps:
         with pytest.raises(ValueError, match="Invalid table"):
             disc.db_discover_enums('orders" --', connection=demo_conn)
         assert ran == []
+
+
+class TestSecondReviewPass:
+    def test_null_filter_is_applied_after_the_row_limit(self) -> None:
+        """A NULL filter inside the limited subquery makes the engine read until it
+        finds N non-null rows; it must sit outside so at most N rows are read."""
+        for driver, tbl, col in (
+            ("sqlite", "t", '"c"'), ("postgresql", "public.t", '"c"'),
+            ("mysql", "`db`.`t`", "`c`"), ("mssql", "[db].[dbo].[t]", "[c]"),
+        ):
+            sql = build_enum_sql(tbl_ref=tbl, col_quoted=col, driver=driver, sample_rows=100, cap=26)
+            inner, _, outer = sql.partition(") s")
+            assert "IS NOT NULL" not in inner, f"{driver}: {sql}"
+            assert "WHERE v IS NOT NULL" in outer, f"{driver}: {sql}"
+
+    def test_null_heavy_column_reads_only_the_sample(self, custom_conn) -> None:
+        def build(db_path: Path) -> None:
+            conn = sqlite3.connect(str(db_path))
+            conn.execute("CREATE TABLE sparse (kind INTEGER)")
+            conn.executemany("INSERT INTO sparse VALUES (?)", [(None,)] * 990 + [(1,), (2,)] * 5)
+            conn.commit()
+            conn.close()
+
+        conn_name = custom_conn(build, name="sparse")
+        result = db_discover_enums("sparse", connection=conn_name, sample_rows=50)
+        # The first 50 rows are all NULL: nothing to propose, and no deeper scan.
+        assert [s["column"] for s in result["skipped"]] == ["kind"]
+
+    def test_postgres_table_reference_is_unquoted(self) -> None:
+        from amnesic.tools.discovery import _table_ref
+
+        assert _table_ref("postgresql", "", "public", "Orders") == "public.Orders"
+
+    @pytest.mark.parametrize("name", ["ORDERID", "CUSTOMERID", "orderId", "CustomerID", "id", "user_id"])
+    def test_key_names_detected(self, name: str) -> None:
+        from amnesic.tools.discovery import _looks_like_key
+
+        assert _looks_like_key(name)
+
+    @pytest.mark.parametrize("name", ["paid", "valid", "status", "STATUS", "ID_TYPE"])
+    def test_non_key_names_not_detected(self, name: str) -> None:
+        from amnesic.tools.discovery import _looks_like_key
+
+        assert not _looks_like_key(name)
+
+    @pytest.mark.parametrize("kwargs, msg", [
+        ({"max_distinct": 0}, "max_distinct must be at least 1"),
+        ({"sample_rows": -1}, "sample_rows must be 0"),
+    ])
+    def test_invalid_bounds_rejected(self, demo_conn: str, kwargs, msg) -> None:
+        with pytest.raises(ValueError, match=msg):
+            db_discover_enums("orders", connection=demo_conn, **kwargs)
+
+    def test_one_failing_column_does_not_discard_the_rest(self, demo_conn: str, monkeypatch) -> None:
+        import amnesic.tools.discovery as disc
+
+        real = disc.run_readonly
+
+        def flaky(conn_cfg, sql, *a, **k):
+            if '"category"' in sql:
+                raise RuntimeError("boom")
+            return real(conn_cfg, sql, *a, **k)
+
+        monkeypatch.setattr(disc, "run_readonly", flaky)
+        result = db_discover_enums("products", connection=demo_conn)
+        assert {"column": "category", "reason": "probe failed: boom"} in result["skipped"]
+        assert "name" in result["not_enum"]
+
+    def test_note_forbids_saving_before_confirmation(self, demo_conn: str) -> None:
+        note = db_discover_enums("orders", connection=demo_conn)["note"]
+        assert "Do not save anything until the user has confirmed" in note
