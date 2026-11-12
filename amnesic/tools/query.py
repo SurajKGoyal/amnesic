@@ -4,9 +4,58 @@ db_query — execute a read-only SQL query against a named connection.
 
 from sqlalchemy import text
 
-from amnesic.config import load_config, resolve_connection
+from amnesic.config import ConnectionConfig, load_config, resolve_connection
 from amnesic.drivers import get_engine, safe_connect
 from amnesic.readonly import assert_readonly
+
+
+def run_readonly(
+    conn_cfg: ConnectionConfig,
+    sql: str,
+    params: dict | None = None,
+    max_rows: int | None = None,
+) -> tuple[list[dict], bool]:
+    """
+    Execute a read-only SQL statement inside a rolled-back transaction.
+
+    Shared by db_query and db_discover_enums so both benefits from the same
+    two-layer write protection without duplicating connection/transaction handling.
+
+    Args:
+        conn_cfg: Resolved ConnectionConfig (caller must have resolved it).
+        sql:      SQL string. Checked with assert_readonly here, so the helper is
+                  safe by construction rather than by caller discipline.
+        params:   Optional bind parameters for text() — None means no params.
+        max_rows: If set, fetch at most this many rows and set truncated=True when
+                  more exist (fetch+1 technique). None fetches all rows.
+
+    Returns:
+        (rows, truncated) — rows is a list of dicts; truncated is False when
+        max_rows is None.
+    """
+    assert_readonly(sql)
+    engine = get_engine(conn_cfg)
+
+    with safe_connect(engine, conn_cfg) as conn_db:
+        trans = conn_db.begin()
+        try:
+            stmt = text(sql)
+            result = conn_db.execute(stmt, params) if params else conn_db.execute(stmt)
+
+            if max_rows is not None:
+                # Fetch one extra row to distinguish "exactly max_rows results"
+                # from "more results exist". Without this, a result of exactly
+                # max_rows rows would be incorrectly flagged as truncated.
+                fetched = result.fetchmany(max_rows + 1)
+                truncated = len(fetched) > max_rows
+                rows = [dict(r._mapping) for r in fetched[:max_rows]]
+            else:
+                rows = [dict(r._mapping) for r in result.fetchall()]
+                truncated = False
+        finally:
+            trans.rollback()
+
+    return rows, truncated
 
 
 def db_query(
@@ -36,20 +85,7 @@ def db_query(
 
     connections = load_config()
     conn_cfg = resolve_connection(connection, connections)
-    engine = get_engine(conn_cfg)
-
-    with safe_connect(engine, conn_cfg) as conn_db:
-        trans = conn_db.begin()
-        try:
-            result = conn_db.execute(text(sql))
-            # Fetch one extra row to distinguish "exactly max_rows results"
-            # from "more results exist". Without this, a result of exactly
-            # max_rows rows would be incorrectly flagged as truncated.
-            fetched = result.fetchmany(max_rows + 1)
-            truncated = len(fetched) > max_rows
-            rows = [dict(r._mapping) for r in fetched[:max_rows]]
-        finally:
-            trans.rollback()
+    rows, truncated = run_readonly(conn_cfg, sql, max_rows=max_rows)
 
     return {
         "rows": rows,

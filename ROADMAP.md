@@ -83,7 +83,7 @@ The headline: **knowledge that accumulates without anyone typing it.** Today eve
 
 **Auto-accumulating knowledge**
 
-- **Enum auto-discovery** ([#13](https://github.com/SurajKGoyal/amnesic/issues/13)) — when a column has fewer than N distinct integer or short-string values, query for them and propose an annotation. Turns "what does `status = 3` mean?" from a question into a prompt the AI can answer from a candidate list.
+- ~~**Enum auto-discovery** ([#13](https://github.com/SurajKGoyal/amnesic/issues/13))~~ ✅ *Merged in [#TBD](https://github.com/SurajKGoyal/amnesic/pull/TBD)* — when a column has fewer than N distinct integer or short-string values, query for them and propose an annotation. Turns "what does `status = 3` mean?" from a question into a prompt the AI can answer from a candidate list.
 - **Soft-FK inference** ([#14](https://github.com/SurajKGoyal/amnesic/issues/14)) — detect implicit relationships from naming patterns (`*_id` columns matching primary keys) where no FK constraint exists. This is the legacy-MSSQL reality, and it's exactly where a live-introspection server returns an empty set because there is no constraint to read.
 - **JOIN-pattern learning** (not yet filed — depends on `db_query_history`) — track which tables actually get joined together in queries run via `db_query`, and promote those edges into the relationship graph. Knowledge derived from usage, which a stateless server cannot have by construction.
 

@@ -117,3 +117,19 @@ class TestTruncatedFlag:
         assert len(result["rows"]) == 2
         assert "id" in result["rows"][0]
         assert "val" in result["rows"][0]
+
+
+class TestRunReadonlyEnforcesStaticCheck:
+    """run_readonly is shared by db_query and db_discover_enums, so it must
+    reject writes itself rather than trust every caller to have checked."""
+
+    def test_write_statement_rejected_before_connecting(self, sqlite_conn, monkeypatch):
+        from amnesic.config import load_config, resolve_connection
+        import amnesic.tools.query as q
+
+        conn_cfg = resolve_connection(sqlite_conn, load_config())
+        connected = []
+        monkeypatch.setattr(q, "get_engine", lambda cfg: connected.append(cfg))
+        with pytest.raises(ValueError, match="Write operation not allowed"):
+            q.run_readonly(conn_cfg, "UPDATE nums SET val = 'x'")
+        assert connected == []

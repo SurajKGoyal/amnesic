@@ -1,7 +1,7 @@
 """
 amnesic MCP server — FastMCP entry point.
 
-All 8 tools are registered here with full docstrings.
+All 13 tools are registered here with full docstrings.
 First line of every docstring is self-contained — non-Claude clients show only that line.
 
 Start with:
@@ -12,6 +12,7 @@ Start with:
 from mcp.server.fastmcp import FastMCP
 
 from amnesic.tools.connections import db_list_connections as _db_list_connections
+from amnesic.tools.discovery import db_discover_enums as _db_discover_enums
 from amnesic.tools.drift import db_detect_drift as _db_detect_drift
 from amnesic.tools.knowledge import db_annotate as _db_annotate
 from amnesic.tools.knowledge import db_deprecate as _db_deprecate
@@ -38,6 +39,8 @@ Recommended workflow for any DB question:
 3. db_get_schema(table, connection) — get columns + saved annotations BEFORE writing SQL
    (if it returns stale: true, the cached schema may be outdated — re-call with
    force_refresh=true before relying on it.)
+   db_discover_enums(table) — on an unfamiliar table, propose enum values for
+   status/type columns; label them with the user, then db_annotate.
 4. db_get_relationships(table, connection) — understand JOINs before complex queries
 5. db_query(sql, connection) — execute read-only SELECT
 6. db_annotate(...) — persist new understanding (enum meanings, FKs, table purpose)
@@ -410,6 +413,49 @@ def db_get_relationships(
         {table, connection, neighbors: [...], paths: ["TableA -> TableB -> TableC", ...]}
     """
     return _db_get_relationships(table=table, connection=connection, depth=depth)
+
+
+@mcp.tool()
+def db_discover_enums(
+    table: str,
+    connection: str | None = None,
+    max_distinct: int = 25,
+    sample_rows: int = 10000,
+    force: bool = False,
+    columns: list[str] | None = None,
+) -> dict:
+    """
+    Propose enum values for low-cardinality columns in a table — never writes to the store.
+
+    Probes integer and short-string columns, sampling sample_rows rows. Columns
+    with more than max_distinct values, or whose values mostly don't repeat, go to
+    not_enum; key columns (id, *_id) and already-annotated ones are skipped. Each
+    candidate's suggested_action is a db_annotate() template with "<meaning>"
+    placeholders: infer labels from context, confirm with the user, then save.
+
+    Args:
+        table:        Table name (required), optionally schema-qualified.
+        connection:   Connection name. Defaults to first defined.
+        max_distinct: Max distinct values for a column to be a candidate (default 25).
+        sample_rows:  Rows to scan per column (default 10000). Use 0 for a full scan.
+        force:        Re-probe columns that already have enum_values (default False).
+        columns:      Probe only these columns (also reaches columns past the 20-per-call cap).
+
+    Returns:
+        {table, connection,
+         candidates: [{column, data_type, distinct_count, values: [{value, count}],
+                       suggested_action}],
+         not_enum: [col, ...], skipped: [{column, reason}],
+         sampled, sample_rows, note}
+    """
+    return _db_discover_enums(
+        table=table,
+        connection=connection,
+        max_distinct=max_distinct,
+        sample_rows=sample_rows,
+        force=force,
+        columns=columns,
+    )
 
 
 def main() -> None:
