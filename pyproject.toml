@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Database",
 ]
 dependencies = [
-    "mcp[cli]>=1.0.0",
+    "mcp[cli]>=1.0.0,<2",   # mcp 2.0 removed mcp.server.fastmcp; cap until we migrate
     "sqlalchemy>=2.0",
     "click>=8.0",
     "rich>=13.0",

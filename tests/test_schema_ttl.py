@@ -176,3 +176,36 @@ class TestCachedAtMigration:
         assert result["cached_at"] is None
         assert result["cache_age_days"] is None
         assert "stale" not in result
+
+
+class TestPre024Fixes:
+    def test_get_schema_reads_cache_once_and_never_reads_stamp_back(self, store, monkeypatch):
+        """Columns and stamp come from one locked read; a fresh fetch uses the
+        stamp save_cached_schema returns instead of re-reading it."""
+        def boom(_fqn):
+            raise AssertionError("second read of the cache stamp")
+
+        monkeypatch.setattr(store, "get_schema_cache_timestamp", boom)
+        fresh = _get_schema(store, monkeypatch)
+        cached = _get_schema(store, monkeypatch)
+        assert fresh["cached"] is False and fresh["cached_at"] is not None
+        assert cached["cached"] is True and cached["cached_at"] == fresh["cached_at"]
+
+    def test_save_returns_the_stamp_it_wrote(self, store):
+        stamp = store.save_cached_schema("users", COLUMNS)
+        columns, read_back = store.get_cached_schema_with_stamp("users")
+        assert stamp == read_back and stamp.endswith("Z")
+        assert [c["column_name"] for c in columns] == ["id", "name"]
+
+    def test_save_with_no_columns_returns_none(self, store):
+        assert store.save_cached_schema("empty", []) is None
+        assert store.get_cached_schema_with_stamp("empty") == (None, None)
+
+    @pytest.mark.parametrize("raw", ["7.5", "abc", "true", "-30"])
+    def test_invalid_env_ttl_warns_and_uses_default(self, store, monkeypatch, caplog, raw):
+        _get_schema(store, monkeypatch)
+        _backdate(store, 31)
+        with caplog.at_level("WARNING", logger="amnesic.tools.schema"):
+            result = _get_schema(store, monkeypatch, ttl_env=raw)
+        assert result["stale"] is True  # default 30 days applied
+        assert any("AMNESIC_SCHEMA_TTL_DAYS" in r.message for r in caplog.records)

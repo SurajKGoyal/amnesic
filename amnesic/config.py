@@ -159,6 +159,13 @@ def _is_leaf_connection(section: dict[str, Any]) -> bool:
     return "driver" in section
 
 
+def _parse_port(raw: Any) -> int:
+    """Parse a port, rejecting TOML booleans (`port = true` would become 1)."""
+    if isinstance(raw, (bool, float)):
+        raise ValueError(f"port must be a whole number, not {raw!r}")
+    return int(raw)
+
+
 def _parse_ttl_days(raw: Any) -> int | None:
     """Parse schema_cache_ttl_days: a whole number of days >= 0, or unset.
 
@@ -201,7 +208,7 @@ def _parse_connections(
                     name=full_name,
                     driver=expanded.get("driver", ""),
                     server=expanded.get("server", ""),
-                    port=int(expanded.get("port", 0)),
+                    port=_parse_port(expanded.get("port", 0)),
                     database=expanded.get("database", ""),
                     user=expanded.get("user", ""),
                     password=expanded.get("password", ""),

@@ -8,6 +8,7 @@ Cached schemas report their age and a `stale` flag so the agent can decide
 whether to force_refresh — the cache is never silently refreshed for you.
 """
 
+import logging
 import os
 from datetime import datetime, timezone
 
@@ -17,6 +18,8 @@ from amnesic.config import ConnectionConfig, load_config, resolve_connection
 from amnesic.drivers import get_engine, safe_connect
 from amnesic.readonly import validate_identifier
 from amnesic.store import get_store
+
+_log = logging.getLogger(__name__)
 
 _DEFAULT_SCHEMA_TTL_DAYS = 30
 
@@ -31,11 +34,19 @@ def _resolve_schema_ttl_days(conn_cfg: ConnectionConfig) -> int:
     env_raw = os.environ.get("AMNESIC_SCHEMA_TTL_DAYS")
     if env_raw is not None and env_raw.strip() != "":
         try:
-            return int(env_raw)
+            days = int(env_raw)
         except ValueError:
-            # Unreadable global setting: fall through to the default rather
-            # than refusing to serve schemas over a typo.
-            pass
+            days = -1
+        if days >= 0:
+            return days
+        # Unreadable global setting: keep serving schemas with the default
+        # rather than failing every call over a typo, but say so — the TOML
+        # setting rejects the same values with a ConfigError.
+        _log.warning(
+            "Ignoring AMNESIC_SCHEMA_TTL_DAYS=%r: expected a whole number of days "
+            ">= 0 (0 disables staleness reporting). Using the default of %d days.",
+            env_raw, _DEFAULT_SCHEMA_TTL_DAYS,
+        )
     return _DEFAULT_SCHEMA_TTL_DAYS
 
 
@@ -381,22 +392,20 @@ def db_get_schema(
     fqn, _, _, _ = normalize_fqn(table, conn_cfg)
     store = get_store(conn_cfg.name)
 
-    cached_columns = None if force_refresh else store.get_cached_schema(fqn)
+    cached_columns, stamp = (
+        (None, None) if force_refresh else store.get_cached_schema_with_stamp(fqn)
+    )
     cached = cached_columns is not None
 
     if not cached:
         columns = _fetch_schema_from_db(table, conn_cfg)
-        store.save_cached_schema(fqn, columns)
+        stamp = store.save_cached_schema(fqn, columns)
     else:
         columns = cached_columns
 
     merged = _merge_knowledge_into_schema(fqn, columns, conn_cfg.name)
 
-    cache = _cache_info(
-        cached,
-        store.get_schema_cache_timestamp(fqn),
-        _resolve_schema_ttl_days(conn_cfg),
-    )
+    cache = _cache_info(cached, stamp, _resolve_schema_ttl_days(conn_cfg))
 
     return {
         "table": fqn,

@@ -456,3 +456,32 @@ class TestSchemaCacheTtl:
         p = self._write(tmp_path, 'schema_cache_ttl_days = "monthly"')
         with pytest.raises(ConfigError, match="Invalid config"):
             load_config(p)
+
+
+class TestPortParsing:
+    @pytest.mark.parametrize("value", ["true", "false", "5432.5"])
+    def test_boolean_or_decimal_port_rejected(self, tmp_path, value):
+        p = write_toml(tmp_path, f"""
+            [connections.mydb]
+            driver = "postgres"
+            server = "localhost"
+            port = {value}
+            database = "mydb"
+            user = "u"
+            password = "pw"
+        """)
+        with pytest.raises(ConfigError, match="port must be a whole number"):
+            load_config(p)
+
+    def test_port_from_env_expansion_still_accepted(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AMNESIC_TEST_PORT", "5433")
+        p = write_toml(tmp_path, """
+            [connections.mydb]
+            driver = "postgres"
+            server = "localhost"
+            port = "${AMNESIC_TEST_PORT}"
+            database = "mydb"
+            user = "u"
+            password = "pw"
+        """)
+        assert load_config(p)["mydb"].port == 5433
