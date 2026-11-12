@@ -36,6 +36,8 @@ Recommended workflow for any DB question:
 2. db_search(query, connection) — find the most relevant tables/columns by keyword
    (USE THIS FIRST when you have a concept in mind — e.g. "payments", "user email".)
 3. db_get_schema(table, connection) — get columns + saved annotations BEFORE writing SQL
+   (if it returns stale: true, the cached schema may be outdated — re-call with
+   force_refresh=true before relying on it.)
 4. db_get_relationships(table, connection) — understand JOINs before complex queries
 5. db_query(sql, connection) — execute read-only SELECT
 6. db_annotate(...) — persist new understanding (enum meanings, FKs, table purpose)
@@ -119,7 +121,14 @@ def db_get_schema(
         force_refresh: Bypass cache and fetch fresh schema from the database.
 
     Returns:
-        {table, connection, columns (with annotations merged in), table_description, cached}
+        {table, connection, columns (with annotations merged in), table_description,
+         cached, cached_at, cache_age_days[, stale][, hint]}
+        cached_at/cache_age_days are null when the age is unknown (not cached,
+        or rows cached before the cached_at column existed). stale is omitted
+        when the age is unknown or staleness reporting is disabled (TTL 0);
+        otherwise it is true once the cache is older than the TTL
+        (per-connection schema_cache_ttl_days, then AMNESIC_SCHEMA_TTL_DAYS,
+        default 30 days), and hint then says how to refresh.
     """
     return _db_get_schema(table=table, connection=connection, force_refresh=force_refresh)
 

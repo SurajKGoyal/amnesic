@@ -410,3 +410,35 @@ class TestConfigCache:
         assert "db_a" in r1
         assert "db_b" in r2
         assert r1 is not r2
+
+
+class TestSchemaCacheTtl:
+    """schema_cache_ttl_days parsing — notably, TOML booleans must not be
+    silently coerced (bool subclasses int: true -> 1 day, false -> 0/off)."""
+
+    def _write(self, tmp_path: Path, ttl_line: str) -> Path:
+        return write_toml(tmp_path, f"""
+            [connections.mydb]
+            driver = "sqlite"
+            database = "/tmp/x.db"
+            {ttl_line}
+        """)
+
+    def test_unset_is_none(self, tmp_path):
+        assert load_config(self._write(tmp_path, ""))["mydb"].schema_cache_ttl_days is None
+
+    @pytest.mark.parametrize("value", [0, 7, 30])
+    def test_integer_is_kept(self, tmp_path, value):
+        p = self._write(tmp_path, f"schema_cache_ttl_days = {value}")
+        assert load_config(p)["mydb"].schema_cache_ttl_days == value
+
+    @pytest.mark.parametrize("value", ["true", "false"])
+    def test_boolean_is_rejected(self, tmp_path, value):
+        p = self._write(tmp_path, f"schema_cache_ttl_days = {value}")
+        with pytest.raises(ConfigError, match="schema_cache_ttl_days must be a whole number"):
+            load_config(p)
+
+    def test_non_numeric_string_is_rejected(self, tmp_path):
+        p = self._write(tmp_path, 'schema_cache_ttl_days = "monthly"')
+        with pytest.raises(ConfigError, match="Invalid config"):
+            load_config(p)

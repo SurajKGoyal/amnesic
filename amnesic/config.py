@@ -159,6 +159,23 @@ def _is_leaf_connection(section: dict[str, Any]) -> bool:
     return "driver" in section
 
 
+def _parse_ttl_days(raw: Any) -> int | None:
+    """Parse schema_cache_ttl_days, rejecting TOML booleans.
+
+    bool subclasses int, so a bare int() would silently turn `true` into a
+    1-day TTL and `false` into 0 (reporting off) — both natural typos for a
+    field whose documented off switch is 0.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        raise ValueError(
+            f"schema_cache_ttl_days must be a whole number of days, not {str(raw).lower()} "
+            "(use 0 to disable staleness reporting)"
+        )
+    return int(raw)
+
+
 def _parse_connections(
     data: dict[str, Any], prefix: str = ""
 ) -> dict[str, ConnectionConfig]:
@@ -187,10 +204,8 @@ def _parse_connections(
                     password=expanded.get("password", ""),
                     tunnel_script=expanded.get("tunnel_script", ""),
                     default_schema=expanded.get("default_schema", ""),
-                    schema_cache_ttl_days=(
-                        int(expanded["schema_cache_ttl_days"])
-                        if expanded.get("schema_cache_ttl_days") is not None
-                        else None
+                    schema_cache_ttl_days=_parse_ttl_days(
+                        expanded.get("schema_cache_ttl_days")
                     ),
                 )
             except (TypeError, ValueError) as exc:

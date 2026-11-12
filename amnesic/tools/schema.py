@@ -67,10 +67,10 @@ def _cache_info(
 ) -> dict:
     """Build the cached_at / cache_age_days / stale / hint block for db_get_schema.
 
-    Follows the response convention of omitting a flag that does not apply
-    (like `deprecated`): `stale` is present only when an age was computed
-    and staleness reporting is enabled, so a reader never has to guess
-    which meaning a null carries.
+    `cached_at` and `cache_age_days` are always present (null when the age is
+    unknown). `stale` follows the omit convention used by `deprecated`: it is
+    present only when an age was computed and staleness reporting is enabled,
+    so a missing flag means "not assessed" rather than an ambiguous null.
     """
     info: dict = {"cached": cached}
     if stamp is None:
@@ -363,12 +363,13 @@ def db_get_schema(
 
     Returns:
         {table, connection, columns (with annotations), table_description,
-         cached, cached_at, cache_age_days, stale[, hint]}
-        cached_at/cache_age_days/stale are null when the age is unknown
-        (fresh fetch failures aside, mainly rows cached before the
-        cached_at column existed). stale is true past the TTL threshold
+         cached, cached_at, cache_age_days[, stale][, hint]}
+        cached_at/cache_age_days are null when the age is unknown (not
+        cached, or rows cached before the cached_at column existed). stale
+        is omitted when the age is unknown or staleness reporting is
+        disabled; otherwise it is true past the TTL threshold
         (per-connection schema_cache_ttl_days, then AMNESIC_SCHEMA_TTL_DAYS,
-        default 30 days; 0 disables the flag).
+        default 30 days; 0 disables the flag), and hint says how to refresh.
     """
     connections = load_config()
     conn_cfg = resolve_connection(connection, connections)
