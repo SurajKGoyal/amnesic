@@ -69,7 +69,7 @@ Keeping knowledge accurate as the schema evolves:
   or clean up one db_detect_drift flagged as orphaned. cascade=True also removes a
   table's columns + relationships.
 
-If db_list_connections() returns an empty list, the user has not yet configured any
+If db_list_connections() returns an empty list (with a hint), the user has not yet configured any
 database connections. Do NOT try to configure them yourself. Instead, tell the user
 to run one of these commands in their terminal:
 
@@ -125,7 +125,10 @@ def db_get_schema(
 
     Returns:
         {table, connection, columns (with annotations merged in), table_description,
+         table_deprecated, table_deprecated_reason,
          cached, cached_at, cache_age_days[, stale][, hint]}
+        table_deprecated: true means the table was retired with db_deprecate —
+        avoid building new queries on it; the reason says what replaced it.
         cached_at is when the schema was cached (the current time on a fresh
         fetch); cached_at/cache_age_days are null only when the age is unknown
         (e.g. cached by an older amnesic). stale: true and hint appear only when the cache is

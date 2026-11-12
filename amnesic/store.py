@@ -282,6 +282,34 @@ class KnowledgeStore:
             return None
         return [dict(r) for r in rows]
 
+    def get_cached_schema_with_stamp(
+        self, table_fqn: str
+    ) -> tuple[list[dict[str, Any]] | None, str | None]:
+        """Return (columns, newest cached_at) for a table in ONE locked read.
+
+        Reading the columns and the stamp separately (get_cached_schema then
+        get_schema_cache_timestamp) costs a second query and lock on the
+        db_get_schema hot path, and a concurrent save_cached_schema could land
+        between them, pairing one version's columns with another's stamp.
+        Columns are (None, None) when not cached; the stamp is None for rows
+        that predate the cached_at column.
+        """
+        key = table_fqn.lower().strip()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT column_name, data_type, is_nullable, max_length, cached_at "
+                "FROM schema_cache WHERE table_fqn = ? ORDER BY rowid",
+                (key,),
+            ).fetchall()
+        if not rows:
+            return None, None
+        stamps = [r["cached_at"] for r in rows if r["cached_at"]]
+        columns = [
+            {k: r[k] for k in ("column_name", "data_type", "is_nullable", "max_length")}
+            for r in rows
+        ]
+        return columns, max(stamps) if stamps else None
+
     def get_schema_cache_timestamp(self, table_fqn: str) -> str | None:
         """Return the newest cached_at stamp for a table's cached schema.
 
@@ -297,8 +325,12 @@ class KnowledgeStore:
             ).fetchone()
         return row["stamp"] if row and row["stamp"] else None
 
-    def save_cached_schema(self, table_fqn: str, columns: list[dict[str, Any]]) -> None:
-        """Replace all cached columns for a table."""
+    def save_cached_schema(self, table_fqn: str, columns: list[dict[str, Any]]) -> str | None:
+        """Replace all cached columns for a table; return the cached_at stamp written.
+
+        Returning the stamp saves callers a read-back. None when there were no
+        columns to write (nothing is cached, so there is no age to report).
+        """
         key = table_fqn.lower().strip()
         params = [
             (
@@ -314,16 +346,22 @@ class KnowledgeStore:
             self._conn.execute(
                 "DELETE FROM schema_cache WHERE table_fqn = ?", (key,)
             )
+            stamp = None
             if params:
                 # Stamp explicitly (not via the column DEFAULT) so the format
                 # is pinned here regardless of how the table was created:
-                # UTC ISO-8601 with a trailing Z.
+                # UTC ISO-8601 with a trailing Z. Computed once so every row
+                # and the return value agree.
+                stamp = self._conn.execute(
+                    "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
+                ).fetchone()[0]
                 self._conn.executemany(
                     "INSERT INTO schema_cache (table_fqn, column_name, data_type, is_nullable, max_length, cached_at) "
-                    "VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
-                    params,
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    [(*p, stamp) for p in params],
                 )
             self._conn.commit()
+        return stamp
 
     # ------------------------------------------------------------------
     # Table knowledge

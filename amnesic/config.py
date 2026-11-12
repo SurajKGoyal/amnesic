@@ -105,6 +105,14 @@ class ConfigError(Exception):
     """Raised for configuration problems (missing vars, invalid format, etc.)."""
 
 
+class ConfigNotFoundError(ConfigError):
+    """No connections.toml yet — a first run, not a broken config.
+
+    A subclass so existing `except ConfigError` handlers keep working, while
+    db_list_connections can tell "not set up" from "set up wrong".
+    """
+
+
 @dataclass
 class ConnectionConfig:
     name: str
@@ -159,6 +167,13 @@ def _is_leaf_connection(section: dict[str, Any]) -> bool:
     return "driver" in section
 
 
+def _parse_port(raw: Any) -> int:
+    """Parse a port, rejecting TOML booleans (`port = true` would become 1)."""
+    if isinstance(raw, (bool, float)):
+        raise ValueError(f"port must be a whole number, not {raw!r}")
+    return int(raw)
+
+
 def _parse_ttl_days(raw: Any) -> int | None:
     """Parse schema_cache_ttl_days: a whole number of days >= 0, or unset.
 
@@ -201,7 +216,7 @@ def _parse_connections(
                     name=full_name,
                     driver=expanded.get("driver", ""),
                     server=expanded.get("server", ""),
-                    port=int(expanded.get("port", 0)),
+                    port=_parse_port(expanded.get("port", 0)),
                     database=expanded.get("database", ""),
                     user=expanded.get("user", ""),
                     password=expanded.get("password", ""),
@@ -267,7 +282,7 @@ def load_config(
             return _config_cache
 
     if not resolved_path.exists():
-        raise ConfigError(
+        raise ConfigNotFoundError(
             f"Config file not found: {resolved_path}\n"
             f"Run 'amnesic init' to create a template."
         )
@@ -328,7 +343,7 @@ def list_connection_names(path: str | Path | None = None) -> list[str]:
         resolved_path = Path(path)
 
     if not resolved_path.exists():
-        raise ConfigError(
+        raise ConfigNotFoundError(
             f"Config file not found: {resolved_path}\n"
             f"Run 'amnesic init' to create a template."
         )
