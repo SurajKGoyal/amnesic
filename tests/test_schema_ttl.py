@@ -67,7 +67,8 @@ class TestSchemaCacheStaleness:
         result = _get_schema(store, monkeypatch)
         assert result["cached"] is False
         assert result["cache_age_days"] == 0
-        assert result["stale"] is False
+        # stale is only ever emitted as true; fresh responses omit it.
+        assert "stale" not in result
         stamp = datetime.strptime(result["cached_at"], "%Y-%m-%dT%H:%M:%SZ").replace(
             tzinfo=timezone.utc
         )
@@ -78,7 +79,7 @@ class TestSchemaCacheStaleness:
         result = _get_schema(store, monkeypatch)
         assert result["cached"] is True
         assert result["cache_age_days"] == 0
-        assert result["stale"] is False
+        assert "stale" not in result
         assert "hint" not in result
 
     def test_backdated_stamp_is_stale_with_hint(self, store, monkeypatch):
@@ -90,6 +91,8 @@ class TestSchemaCacheStaleness:
         assert result["stale"] is True
         assert "force_refresh=true" in result["hint"]
         assert "183 days ago" in result["hint"]
+        # db_detect_drift audits annotations; it does not refresh the cache.
+        assert "db_detect_drift" not in result["hint"]
 
     def test_env_ttl_zero_suppresses_flag(self, store, monkeypatch):
         _get_schema(store, monkeypatch)
@@ -128,7 +131,7 @@ class TestSchemaCacheStaleness:
         _backdate(store, -3)
         result = _get_schema(store, monkeypatch)
         assert result["cache_age_days"] == 0
-        assert result["stale"] is False
+        assert "stale" not in result
 
 
 class TestCachedAtMigration:

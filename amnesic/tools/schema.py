@@ -67,15 +67,20 @@ def _cache_info(
 ) -> dict:
     """Build the cached_at / cache_age_days / stale / hint block for db_get_schema.
 
-    `cached_at` and `cache_age_days` are always present (null when the age is
-    unknown). `stale` follows the omit convention used by `deprecated`: it is
-    present only when an age was computed and staleness reporting is enabled,
-    so a missing flag means "not assessed" rather than an ambiguous null.
+    `cached_at` and `cache_age_days` are always present. A fresh fetch is
+    written to the cache before its stamp is read back, so they carry the
+    current time even when `cached` is false; they are null only when no
+    stamp exists (rows cached before the cached_at column, or a table with
+    no columns) or, for `cache_age_days`, when the stamp is unparseable.
+
+    `stale` and `hint` appear only when the cache is past the TTL — never as
+    `stale: false` — like the column-level `deprecated` flag. A model only
+    needs to act on true, and omitting false saves tokens on every fresh call.
     """
     info: dict = {"cached": cached}
     if stamp is None:
-        # Not cached, or rows predate the cached_at column: report unknown
-        # age rather than pretending the cache is fresh.
+        # No stamp (legacy rows predating cached_at, or no columns): report
+        # unknown age rather than pretending the cache is fresh.
         info["cached_at"] = None
         info["cache_age_days"] = None
         return info
@@ -92,11 +97,13 @@ def _cache_info(
     if ttl_days <= 0:
         # Staleness reporting disabled — age is still surfaced, the flag is not.
         return info
-    info["stale"] = age_days >= ttl_days
-    if info["stale"]:
+    if age_days >= ttl_days:
+        info["stale"] = True
+        # force_refresh is the only action that refreshes the column cache;
+        # db_detect_drift audits annotations and would leave it stale.
         info["hint"] = (
             f"Schema cached {age_days} days ago. "
-            "Pass force_refresh=true to re-fetch, or run db_detect_drift."
+            "Pass force_refresh=true to re-fetch it from the database."
         )
     return info
 
@@ -364,12 +371,10 @@ def db_get_schema(
     Returns:
         {table, connection, columns (with annotations), table_description,
          cached, cached_at, cache_age_days[, stale][, hint]}
-        cached_at/cache_age_days are null when the age is unknown (not
-        cached, or rows cached before the cached_at column existed). stale
-        is omitted when the age is unknown or staleness reporting is
-        disabled; otherwise it is true past the TTL threshold
-        (per-connection schema_cache_ttl_days, then AMNESIC_SCHEMA_TTL_DAYS,
-        default 30 days; 0 disables the flag), and hint says how to refresh.
+        The public contract for the cache fields is the db_get_schema tool
+        description in server.py (what the model sees); see _cache_info for
+        the exact rules. TTL: per-connection schema_cache_ttl_days, then
+        AMNESIC_SCHEMA_TTL_DAYS, default 30 days; 0 disables the flag.
     """
     connections = load_config()
     conn_cfg = resolve_connection(connection, connections)

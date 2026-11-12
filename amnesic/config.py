@@ -160,20 +160,23 @@ def _is_leaf_connection(section: dict[str, Any]) -> bool:
 
 
 def _parse_ttl_days(raw: Any) -> int | None:
-    """Parse schema_cache_ttl_days, rejecting TOML booleans.
+    """Parse schema_cache_ttl_days: a whole number of days >= 0, or unset.
 
-    bool subclasses int, so a bare int() would silently turn `true` into a
-    1-day TTL and `false` into 0 (reporting off) — both natural typos for a
-    field whose documented off switch is 0.
+    A bare int() would accept three silent mistakes: `true`/`false` (bool
+    subclasses int, giving a 1-day TTL or switching reporting off), `7.5`
+    (truncated to 7), and negatives (treated as 0, i.e. off). The documented
+    off switch is 0, so all three are rejected. Strings are still cast, since
+    ${VAR} expansion always produces one ("30").
     """
     if raw is None:
         return None
-    if isinstance(raw, bool):
-        raise ValueError(
-            f"schema_cache_ttl_days must be a whole number of days, not {str(raw).lower()} "
-            "(use 0 to disable staleness reporting)"
-        )
-    return int(raw)
+    hint = "use a whole number of days, or 0 to disable staleness reporting"
+    if isinstance(raw, (bool, float)):
+        raise ValueError(f"schema_cache_ttl_days must be a whole number, not {raw!r} ({hint})")
+    days = int(raw)
+    if days < 0:
+        raise ValueError(f"schema_cache_ttl_days cannot be negative, got {days} ({hint})")
+    return days
 
 
 def _parse_connections(

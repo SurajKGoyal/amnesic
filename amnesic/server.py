@@ -123,12 +123,10 @@ def db_get_schema(
     Returns:
         {table, connection, columns (with annotations merged in), table_description,
          cached, cached_at, cache_age_days[, stale][, hint]}
-        cached_at/cache_age_days are null when the age is unknown (not cached,
-        or rows cached before the cached_at column existed). stale is omitted
-        when the age is unknown or staleness reporting is disabled (TTL 0);
-        otherwise it is true once the cache is older than the TTL
-        (per-connection schema_cache_ttl_days, then AMNESIC_SCHEMA_TTL_DAYS,
-        default 30 days), and hint then says how to refresh.
+        cached_at is when the schema was cached (the current time on a fresh
+        fetch); cached_at/cache_age_days are null only when the age is unknown
+        (e.g. cached by an older amnesic). stale: true and hint appear only when the cache is
+        older than the TTL (default 30 days) — absent means not stale.
     """
     return _db_get_schema(table=table, connection=connection, force_refresh=force_refresh)
 

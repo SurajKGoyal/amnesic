@@ -432,11 +432,25 @@ class TestSchemaCacheTtl:
         p = self._write(tmp_path, f"schema_cache_ttl_days = {value}")
         assert load_config(p)["mydb"].schema_cache_ttl_days == value
 
-    @pytest.mark.parametrize("value", ["true", "false"])
-    def test_boolean_is_rejected(self, tmp_path, value):
+    @pytest.mark.parametrize("value", ["true", "false", "7.5", "30.0"])
+    def test_boolean_or_decimal_is_rejected(self, tmp_path, value):
         p = self._write(tmp_path, f"schema_cache_ttl_days = {value}")
-        with pytest.raises(ConfigError, match="schema_cache_ttl_days must be a whole number"):
+        with pytest.raises(
+            ConfigError, match=r"must be a whole number.*0 to disable staleness reporting"
+        ):
             load_config(p)
+
+    def test_negative_is_rejected(self, tmp_path):
+        p = self._write(tmp_path, "schema_cache_ttl_days = -30")
+        with pytest.raises(
+            ConfigError, match=r"cannot be negative, got -30.*0 to disable staleness reporting"
+        ):
+            load_config(p)
+
+    def test_numeric_string_from_env_expansion_is_accepted(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AMNESIC_TEST_TTL", "14")
+        p = self._write(tmp_path, 'schema_cache_ttl_days = "${AMNESIC_TEST_TTL}"')
+        assert load_config(p)["mydb"].schema_cache_ttl_days == 14
 
     def test_non_numeric_string_is_rejected(self, tmp_path):
         p = self._write(tmp_path, 'schema_cache_ttl_days = "monthly"')
