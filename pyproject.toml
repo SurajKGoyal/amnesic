@@ -43,3 +43,6 @@ amnesic = "amnesic.server:mcp"
 Homepage = "https://github.com/SurajKGoyal/amnesic"
 Repository = "https://github.com/SurajKGoyal/amnesic"
 Issues = "https://github.com/SurajKGoyal/amnesic/issues"
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"

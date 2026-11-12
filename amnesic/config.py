@@ -105,6 +105,14 @@ class ConfigError(Exception):
     """Raised for configuration problems (missing vars, invalid format, etc.)."""
 
 
+class ConfigNotFoundError(ConfigError):
+    """No connections.toml yet — a first run, not a broken config.
+
+    A subclass so existing `except ConfigError` handlers keep working, while
+    db_list_connections can tell "not set up" from "set up wrong".
+    """
+
+
 @dataclass
 class ConnectionConfig:
     name: str
@@ -274,7 +282,7 @@ def load_config(
             return _config_cache
 
     if not resolved_path.exists():
-        raise ConfigError(
+        raise ConfigNotFoundError(
             f"Config file not found: {resolved_path}\n"
             f"Run 'amnesic init' to create a template."
         )
@@ -335,7 +343,7 @@ def list_connection_names(path: str | Path | None = None) -> list[str]:
         resolved_path = Path(path)
 
     if not resolved_path.exists():
-        raise ConfigError(
+        raise ConfigNotFoundError(
             f"Config file not found: {resolved_path}\n"
             f"Run 'amnesic init' to create a template."
         )

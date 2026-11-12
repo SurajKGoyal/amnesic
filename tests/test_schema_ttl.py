@@ -203,9 +203,19 @@ class TestPre024Fixes:
 
     @pytest.mark.parametrize("raw", ["7.5", "abc", "true", "-30"])
     def test_invalid_env_ttl_warns_and_uses_default(self, store, monkeypatch, caplog, raw):
+        monkeypatch.setattr("amnesic.tools.schema._warned_ttl_env_values", set())
         _get_schema(store, monkeypatch)
         _backdate(store, 31)
         with caplog.at_level("WARNING", logger="amnesic.tools.schema"):
             result = _get_schema(store, monkeypatch, ttl_env=raw)
         assert result["stale"] is True  # default 30 days applied
         assert any("AMNESIC_SCHEMA_TTL_DAYS" in r.message for r in caplog.records)
+
+
+    def test_invalid_env_ttl_warns_only_once(self, store, monkeypatch, caplog):
+        """db_get_schema runs on most turns; a typo must not log on every call."""
+        monkeypatch.setattr("amnesic.tools.schema._warned_ttl_env_values", set())
+        with caplog.at_level("WARNING", logger="amnesic.tools.schema"):
+            for _ in range(3):
+                _get_schema(store, monkeypatch, ttl_env="30d")
+        assert sum("AMNESIC_SCHEMA_TTL_DAYS" in r.message for r in caplog.records) == 1

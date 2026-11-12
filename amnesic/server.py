@@ -69,7 +69,7 @@ Keeping knowledge accurate as the schema evolves:
   or clean up one db_detect_drift flagged as orphaned. cascade=True also removes a
   table's columns + relationships.
 
-If db_list_connections() returns an empty list, the user has not yet configured any
+If db_list_connections() returns an empty list (with a hint), the user has not yet configured any
 database connections. Do NOT try to configure them yourself. Instead, tell the user
 to run one of these commands in their terminal:
 

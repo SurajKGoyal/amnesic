@@ -20,6 +20,9 @@ from amnesic.readonly import validate_identifier
 from amnesic.store import get_store
 
 _log = logging.getLogger(__name__)
+# Bad AMNESIC_SCHEMA_TTL_DAYS values already reported. _resolve_schema_ttl_days
+# runs on every db_get_schema call; one warning per value is enough.
+_warned_ttl_env_values: set[str] = set()
 
 _DEFAULT_SCHEMA_TTL_DAYS = 30
 
@@ -42,6 +45,9 @@ def _resolve_schema_ttl_days(conn_cfg: ConnectionConfig) -> int:
         # Unreadable global setting: keep serving schemas with the default
         # rather than failing every call over a typo, but say so — the TOML
         # setting rejects the same values with a ConfigError.
+        if env_raw in _warned_ttl_env_values:
+            return _DEFAULT_SCHEMA_TTL_DAYS
+        _warned_ttl_env_values.add(env_raw)
         _log.warning(
             "Ignoring AMNESIC_SCHEMA_TTL_DAYS=%r: expected a whole number of days "
             ">= 0 (0 disables staleness reporting). Using the default of %d days.",
@@ -381,6 +387,7 @@ def db_get_schema(
 
     Returns:
         {table, connection, columns (with annotations), table_description,
+         table_deprecated, table_deprecated_reason,
          cached, cached_at, cache_age_days[, stale][, hint]}
         The public contract for the cache fields is the db_get_schema tool
         description in server.py (what the model sees); see _cache_info for
