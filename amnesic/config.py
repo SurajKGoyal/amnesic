@@ -159,6 +159,26 @@ def _is_leaf_connection(section: dict[str, Any]) -> bool:
     return "driver" in section
 
 
+def _parse_ttl_days(raw: Any) -> int | None:
+    """Parse schema_cache_ttl_days: a whole number of days >= 0, or unset.
+
+    A bare int() would accept three silent mistakes: `true`/`false` (bool
+    subclasses int, giving a 1-day TTL or switching reporting off), `7.5`
+    (truncated to 7), and negatives (treated as 0, i.e. off). The documented
+    off switch is 0, so all three are rejected. Strings are still cast, since
+    ${VAR} expansion always produces one ("30").
+    """
+    if raw is None:
+        return None
+    hint = "use a whole number of days, or 0 to disable staleness reporting"
+    if isinstance(raw, (bool, float)):
+        raise ValueError(f"schema_cache_ttl_days must be a whole number, not {raw!r} ({hint})")
+    days = int(raw)
+    if days < 0:
+        raise ValueError(f"schema_cache_ttl_days cannot be negative, got {days} ({hint})")
+    return days
+
+
 def _parse_connections(
     data: dict[str, Any], prefix: str = ""
 ) -> dict[str, ConnectionConfig]:
@@ -187,10 +207,8 @@ def _parse_connections(
                     password=expanded.get("password", ""),
                     tunnel_script=expanded.get("tunnel_script", ""),
                     default_schema=expanded.get("default_schema", ""),
-                    schema_cache_ttl_days=(
-                        int(expanded["schema_cache_ttl_days"])
-                        if expanded.get("schema_cache_ttl_days") is not None
-                        else None
+                    schema_cache_ttl_days=_parse_ttl_days(
+                        expanded.get("schema_cache_ttl_days")
                     ),
                 )
             except (TypeError, ValueError) as exc:

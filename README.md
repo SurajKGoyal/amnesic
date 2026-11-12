@@ -598,7 +598,7 @@ That's measurably less data movement than a "naked" SQL MCP — which has to run
 
 Shipped so far: the knowledge layer (v0.1), BM25 search (v0.1.5), lifecycle management — deprecate / drift detection / forget (v0.2), and portable knowledge export/import (v0.2.2).
 
-**Next up (v0.3 — "Earn the memory"):** knowledge that accumulates *without anyone typing it* — enum auto-discovery, soft-FK inference for legacy schemas with no constraints, and JOIN-pattern learning. Plus the table-stakes work: a token budget on every response, indexes and primary keys in the schema fetch, cache staleness flags, and a smaller tool surface.
+**Next up (v0.3 — "Earn the memory"):** knowledge that accumulates *without anyone typing it* — enum auto-discovery, soft-FK inference for legacy schemas with no constraints, and JOIN-pattern learning. Plus the table-stakes work: a token budget on every response, indexes and primary keys in the schema fetch, and a smaller tool surface.
 
 See [ROADMAP.md](./ROADMAP.md) for the full picture and the reasoning behind the ordering.
 

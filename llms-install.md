@@ -28,11 +28,16 @@ amnesic is a Python MCP server that gives the user persistent semantic memory of
 
 4. **Verify**: have the user run `amnesic test` (or `amnesic test <connection-name>`) to confirm the connection works before they invoke any MCP tool.
 
-## What amnesic provides (9 MCP tools)
+5. **Optional — schema-cache staleness.** `db_get_schema` flags a cached schema as `stale: true` once it is older than 30 days. Only mention this if the user asks to tune it:
+   - per connection, in `~/.config/amnesic/connections.toml`: `schema_cache_ttl_days = 30` (a whole number; `0` disables the flag for that connection)
+   - globally, via the env var `AMNESIC_SCHEMA_TTL_DAYS` (the per-connection value wins)
+
+## What amnesic provides (12 MCP tools)
 
 - `db_list_connections`, `db_list_tables`, `db_search`, `db_get_schema`
 - `db_query` (read-only, two layers of write protection)
 - `db_annotate`, `db_sync_knowledge`
+- `db_deprecate`, `db_forget`, `db_detect_drift`
 - `db_discover_relationships`, `db_get_relationships`
 
 All tools accept a `connection` argument that defaults to the first configured connection.
