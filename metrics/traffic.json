@@ -1583,6 +1583,14 @@
       "clones_uniques": 169,
       "views_total": 57,
       "views_uniques": 45
+    },
+    {
+      "snapshot_date": "2026-11-16",
+      "window_days": 14,
+      "clones_total": 397,
+      "clones_uniques": 169,
+      "views_total": 57,
+      "views_uniques": 45
     }
   ],
   "totals": {
